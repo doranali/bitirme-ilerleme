@@ -4,8 +4,8 @@
 
 | Alan | Bilgi |
 |------|-------|
-| **Öğrenci Adı Soyadı** | *(Adınızı yazın)* |
-| **Öğrenci No** | *(Numaranızı yazın)* |
+| **Öğrenci Adı Soyadı** | *Ali Doran* |
+| **Öğrenci No** | *24360859211* |
 | **Proje Başlığı** | Smart Log Engine: 5651 Uyumlu Kurumsal Log Yönetim Platformu (Fluent Bit, Kafka KRaft, Graylog, OpenSearch, Grafana, Log Management UI) |
 | **Danışman** | Prof. Dr. Turgay Tugay Bilgin |
 | **Dönem** | 2025-2026 Bahar |
