@@ -1,0 +1,3604 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Sistem Paneli - Birleşik Yönetim Arayüzü</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --color-primary: #2563eb;
+            --color-primary-dark: #1e40af;
+            --color-success: #059669;
+            --color-warning: #d97706;
+            --color-danger: #dc2626;
+            --color-info: #0284c7;
+            --color-dark: #1e293b;
+            --color-light: #f1f5f9;
+            --color-border: #e2e8f0;
+            --bg-main: #f8fafc;
+            --bg-surface: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+            --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+            --shadow-lg: 0 12px 24px rgba(15, 23, 42, 0.12);
+            --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.2);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            font-size: 14px;
+            letter-spacing: 0.01em;
+        }
+
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+            color: white;
+            padding: 2rem 0;
+            overflow-y: auto;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo-section {
+            padding: 0 1.5rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .logo-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .logo-section h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .logo-section p {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        .navigation {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 0 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.85rem 1rem;
+            border-radius: 0.5rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+            border: 1px solid transparent;
+            position: relative;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .nav-item.active {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-weight: 600;
+            border-color: rgba(255, 255, 255, 0.32);
+        }
+
+        .nav-item i {
+            width: 1.25rem;
+            text-align: center;
+        }
+
+        .nav-item:focus-visible,
+        .btn:focus-visible,
+        .btn-icon:focus-visible,
+        .group-toggle-btn:focus-visible,
+        .modal-close:focus-visible {
+            outline: none;
+            box-shadow: var(--focus-ring);
+        }
+
+        .sidebar-footer {
+            padding: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            margin-top: auto;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .version-info small {
+            display: block;
+            opacity: 0.7;
+            font-size: 0.75rem;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .compliance-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.6rem;
+            padding: 0.4rem 0.6rem;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 0.4rem;
+            font-size: 0.75rem;
+            opacity: 0.9;
+        }
+        .compliance-badge i { font-size: 0.9rem; }
+
+        .pulse {
+            display: inline-block;
+            width: 0.5rem;
+            height: 0.5rem;
+            background-color: #4ade80;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main Content */
+        .main-content {
+            overflow-y: auto;
+            padding: 2rem;
+            max-width: 1680px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .top-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            background: var(--bg-surface);
+            padding: 1rem 1.25rem;
+            border-radius: 0.65rem;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--color-border);
+            position: sticky;
+            top: 0.5rem;
+            z-index: 50;
+        }
+
+        .header-left h2 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 0.1rem;
+            letter-spacing: 0.01em;
+            color: var(--text-main);
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.86rem;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-icon {
+            width: 2.5rem;
+            height: 2.5rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            background: var(--color-light);
+            color: var(--color-dark);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .btn-icon:hover {
+            background: var(--color-border);
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+            animation: fadeInUp 0.28s ease;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .startup-splash {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+            color: white;
+            transition: opacity 0.45s ease, visibility 0.45s ease;
+        }
+
+        .startup-splash.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .startup-card {
+            min-width: 320px;
+            max-width: 520px;
+            text-align: center;
+            padding: 1.25rem 1.5rem;
+            border-radius: 0.9rem;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(2px);
+        }
+
+        .startup-logo {
+            font-size: 2rem;
+            margin-bottom: 0.6rem;
+            animation: startupPulse 1.4s ease-in-out infinite;
+        }
+
+        .startup-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 0.3rem;
+            letter-spacing: 0.02em;
+        }
+
+        .startup-subtitle {
+            opacity: 0.86;
+            font-size: 0.86rem;
+        }
+
+        .startup-progress {
+            margin-top: 0.85rem;
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .startup-progress-bar {
+            height: 100%;
+            width: 32%;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 999px;
+            animation: startupLoad 1.1s ease-in-out infinite;
+        }
+
+        @keyframes startupPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.08); opacity: 0.86; }
+        }
+
+        @keyframes startupLoad {
+            0% { transform: translateX(-110%); }
+            100% { transform: translateX(320%); }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-surface);
+            border-radius: 0.75rem;
+            box-shadow: var(--shadow-md);
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+            transition: all 0.2s ease;
+            border: 1px solid var(--color-border);
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-1px);
+        }
+
+        .card-primary {
+            border-left: 4px solid var(--color-primary);
+        }
+
+        .card-header {
+            background: var(--color-light);
+            padding: 0.95rem 1.1rem;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            backdrop-filter: blur(2px);
+        }
+
+        .card-header h3, .card-header h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 0;
+            letter-spacing: 0.01em;
+        }
+
+        .card-header i {
+            margin-right: 0.5rem;
+        }
+
+        .card-body {
+            padding: 1.1rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--color-primary-dark);
+        }
+
+        .btn-success {
+            background: var(--color-success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: var(--color-danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-warning {
+            background: var(--color-warning);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+        }
+
+        .btn-info {
+            background: var(--color-info);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--color-border);
+            color: var(--color-dark);
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .btn-sm {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        /* Grid */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Status */
+        .status-large {
+            text-align: center;
+            padding: 1.25rem;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 2rem;
+            height: 2rem;
+            border: 3px solid var(--color-border);
+            border-top-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-success { background: #dcfce7; color: #166534; }
+        .status-danger { background: #fee2e2; color: #991b1b; }
+        .status-warning { background: #fef3c7; color: #92400e; }
+        .status-info { background: #dbeafe; color: #1e40af; }
+        .status-unknown { background: #f3f4f6; color: #374151; }
+
+        .health-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .health-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: var(--color-light);
+            border-radius: 0.5rem;
+        }
+
+        .health-item span:first-child {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        /* Service List */
+        .service-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .service-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: var(--color-light);
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            border: 1px solid var(--color-border);
+        }
+
+        .service-item-name {
+            font-weight: 500;
+        }
+
+        .services-intel-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.6rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .services-mini-kpi {
+            border: 1px solid var(--color-border);
+            border-radius: 0.6rem;
+            background: var(--bg-surface);
+            padding: 0.55rem 0.65rem;
+        }
+
+        .services-mini-kpi .label {
+            font-size: 0.73rem;
+            color: var(--text-muted);
+            margin-bottom: 0.1rem;
+        }
+
+        .services-mini-kpi .value {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .services-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.7rem;
+        }
+
+        .services-toolbar .input-search {
+            max-width: 320px;
+        }
+
+        .services-summary {
+            border: 1px solid var(--color-border);
+            border-radius: 0.6rem;
+            background: var(--bg-surface);
+            padding: 0.65rem 0.75rem;
+            font-size: 0.83rem;
+            color: var(--text-muted);
+            margin-bottom: 0.7rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .overview-layout {
+            display: grid;
+            grid-template-columns: 1.55fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .overview-stack {
+            display: grid;
+            gap: 1rem;
+            align-content: start;
+        }
+
+        .overview-kpi-strip {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.65rem;
+            margin-top: 0.9rem;
+        }
+
+        .overview-kpi {
+            border: 1px solid var(--color-border);
+            background: var(--bg-surface);
+            border-radius: 0.6rem;
+            padding: 0.55rem 0.6rem;
+        }
+
+        .overview-kpi .label {
+            font-size: 0.74rem;
+            color: var(--text-muted);
+            margin-bottom: 0.1rem;
+        }
+
+        .overview-kpi .value {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .overview-files {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.65rem;
+        }
+
+        .overview-file-item {
+            border: 1px solid var(--color-border);
+            border-radius: 0.55rem;
+            padding: 0.55rem 0.65rem;
+            background: var(--bg-surface);
+            font-size: 0.84rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .critical-list {
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .critical-item {
+            border: 1px solid var(--color-border);
+            border-radius: 0.6rem;
+            padding: 0.7rem 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.8rem;
+            background: var(--bg-surface);
+        }
+
+        .critical-title {
+            font-size: 0.86rem;
+            font-weight: 700;
+            margin-bottom: 0.1rem;
+            color: var(--text-main);
+        }
+
+        .critical-value {
+            font-size: 0.81rem;
+            color: var(--text-muted);
+        }
+
+        .overview-intel-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.6rem;
+        }
+
+        .overview-mini-kpi {
+            border: 1px solid var(--color-border);
+            border-radius: 0.6rem;
+            background: var(--bg-surface);
+            padding: 0.55rem 0.65rem;
+        }
+
+        .overview-mini-kpi .label {
+            font-size: 0.73rem;
+            color: var(--text-muted);
+            margin-bottom: 0.15rem;
+        }
+
+        .overview-mini-kpi .value {
+            font-size: 0.96rem;
+            font-weight: 700;
+            color: var(--text-main);
+            word-break: break-word;
+        }
+
+        .overview-freshness-list {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .overview-freshness-item {
+            border: 1px solid var(--color-border);
+            border-radius: 0.55rem;
+            background: var(--bg-surface);
+            padding: 0.5rem 0.65rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.7rem;
+        }
+
+        .overview-freshness-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .overview-freshness-value {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .overview-event-list {
+            display: grid;
+            gap: 0.55rem;
+        }
+
+        .overview-event-item {
+            border: 1px solid var(--color-border);
+            border-radius: 0.55rem;
+            background: var(--bg-surface);
+            padding: 0.55rem 0.65rem;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .overview-event-main {
+            display: grid;
+            gap: 0.12rem;
+        }
+
+        .overview-event-title {
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .overview-event-meta {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 1rem;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 1rem;
+            background: var(--color-light);
+            border-radius: 0.5rem;
+            border: 1px solid var(--color-border);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--color-primary);
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        /* Section Title */
+        .section-title {
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .section-title h3 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0;
+        }
+
+        .section-title p {
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 0.22rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .badge-info { background: #dbeafe; color: #1e40af; }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
+        .badge-primary { background: #e0e7ff; color: #3730a3; }
+        .badge-secondary { background: #f1f5f9; color: #475569; }
+
+        /* Form Inputs */
+        .input-search {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .select-input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            background: white;
+        }
+
+        .input-search:focus,
+        .select-input:focus,
+        .config-editor:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Editor */
+        .config-editor {
+            width: 100%;
+            min-height: 400px;
+            padding: 1rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            resize: vertical;
+            line-height: 1.45;
+        }
+
+        .editor-placeholder {
+            text-align: center;
+            padding: 3rem;
+            color: #9ca3af;
+        }
+
+        .editor-placeholder i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .editor-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .editor-help {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #fef3c7;
+            border-left: 4px solid var(--color-warning);
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        /* Progress Bar */
+        .progress {
+            height: 1rem;
+            background: var(--color-border);
+            border-radius: 999px;
+            overflow: hidden;
+            margin: 0.5rem 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--color-primary);
+            transition: width 0.3s ease;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 0.75rem;
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid var(--color-border);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal-lg {
+            max-width: 800px;
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-footer {
+            padding: 1.5rem;
+            border-top: 1px solid var(--color-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        /* Alerts */
+        #alert-container {
+            margin-bottom: 1rem;
+            position: sticky;
+            top: 0.5rem;
+            z-index: 100;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 0.65rem;
+        }
+
+        .alert-success {
+            background: #dcfce7;
+            color: #166534;
+            border-left: 4px solid var(--color-success);
+        }
+
+        .alert-danger {
+            background: #fee2e2;
+            color: #991b1b;
+            border-left: 4px solid var(--color-danger);
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+            border-left: 4px solid var(--color-info);
+        }
+
+        .alert-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border-left: 4px solid var(--color-warning);
+        }
+
+        .disk-guidance-banner {
+            margin: 0 0 1rem 0;
+            padding: 0.85rem 1rem;
+            border-radius: 0.5rem;
+            box-shadow: var(--shadow-sm);
+            border-left: 4px solid var(--color-info);
+            background: #eff6ff;
+            color: var(--text-main);
+        }
+        .disk-guidance-banner.severity-danger {
+            border-left-color: var(--color-danger);
+            background: #fef2f2;
+        }
+        .disk-guidance-banner.severity-warning {
+            border-left-color: var(--color-warning);
+            background: #fffbeb;
+        }
+        .disk-guidance-banner.severity-info {
+            border-left-color: var(--color-info);
+            background: #eff6ff;
+        }
+        .disk-guidance-banner.disk-guidance-hidden {
+            display: none !important;
+        }
+        .disk-guidance-banner .disk-guidance-actions {
+            margin-top: 0.65rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .disk-guidance-banner .disk-guidance-title {
+            font-weight: 700;
+            margin-bottom: 0.35rem;
+        }
+        .disk-guidance-banner .disk-guidance-metrics {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 0.35rem;
+        }
+        .disk-guidance-banner .disk-guidance-line {
+            margin: 0.25rem 0;
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+        .disk-guidance-banner .disk-guidance-muted {
+            color: var(--text-muted);
+            font-size: 0.86rem;
+        }
+
+        /* Tables */
+        .services-table {
+            overflow-x: auto;
+            border: 1px solid var(--color-border);
+            border-radius: 0.65rem;
+        }
+
+        .services-grid-table {
+            width: 100%;
+            min-width: 1180px;
+            table-layout: fixed;
+            border-collapse: collapse;
+            background: var(--bg-surface);
+        }
+
+        .services-grid-table .col-service { width: 16%; }
+        .services-grid-table .col-status { width: 10%; }
+        .services-grid-table .col-health { width: 10%; }
+        .services-grid-table .col-disk { width: 11%; font-size: 0.88rem; }
+        .services-grid-table .col-issue { width: 21%; }
+        .services-grid-table .col-scale { width: 12%; }
+        .services-grid-table .col-actions { width: 20%; }
+
+        .services-grid-table td,
+        .services-grid-table th {
+            vertical-align: middle;
+        }
+
+        .services-grid-table .col-issue {
+            word-break: break-word;
+        }
+
+        .services-scale-box {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .services-scale-input {
+            width: 76px;
+            padding: 0.25rem 0.35rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.4rem;
+            background: var(--bg-surface);
+            color: var(--text-main);
+        }
+
+        .services-action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .services-link-note {
+            margin-top: 0.35rem;
+            font-size: 0.74rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th {
+            text-align: left;
+            padding: 0.8rem 0.9rem;
+            background: var(--color-light);
+            border-bottom: 1px solid var(--color-border);
+            font-weight: 600;
+            font-size: 0.83rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        td {
+            padding: 0.78rem 0.9rem;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: middle;
+        }
+
+        tr:hover {
+            background: var(--color-light);
+        }
+
+        tbody tr:nth-child(even) {
+            background: rgba(148, 163, 184, 0.06);
+        }
+
+        /* File List */
+        .file-tree {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .file-item {
+            padding: 0.75rem;
+            background: var(--color-light);
+            border-left: 3px solid var(--color-border);
+            border-radius: 0.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+            border-top: 1px solid var(--color-border);
+            border-right: 1px solid var(--color-border);
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .file-item:hover {
+            background: var(--bg-surface);
+            border-left-color: var(--color-primary);
+        }
+
+        .file-item.active {
+            background: var(--bg-surface);
+            border-left-color: var(--color-success);
+            font-weight: 600;
+        }
+
+        /* Help Text */
+        .help-text {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            line-height: 1.5;
+        }
+
+        /* Settings Grid */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .settings-toolbar {
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+            margin-top: 0.75rem;
+        }
+
+        .settings-quick-guide {
+            border: 1px solid var(--color-border);
+            background: var(--bg-surface);
+            border-radius: 0.65rem;
+            padding: 0.6rem 0.75rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem 1rem;
+        }
+
+        .settings-quick-guide strong {
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        .settings-subnav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin: 0 0 1.1rem 0;
+            padding: 0.55rem 0;
+            border-bottom: 1px solid var(--color-border);
+            position: sticky;
+            top: 0;
+            z-index: 6;
+            background: var(--bg-main, #f8fafc);
+        }
+        .settings-subnav a {
+            font-size: 0.8rem;
+            padding: 0.32rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid var(--color-border);
+            color: var(--text-main, #1e293b);
+            text-decoration: none;
+            line-height: 1.3;
+        }
+        .settings-subnav a:hover {
+            border-color: var(--color-primary, #2563eb);
+            color: var(--color-primary, #2563eb);
+        }
+        .settings-card-block {
+            scroll-margin-top: 5.5rem;
+        }
+
+        .agent-fleet-mode-switch {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.75rem;
+            align-items: center;
+        }
+        .agent-fleet-mode-switch .agent-fleet-mode-btn.active {
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+        }
+        .agent-fleet-shared-block {
+            margin-top: 1rem;
+            padding-top: 0.85rem;
+            border-top: 1px solid var(--color-border);
+        }
+        .agent-fleet-shared-block h5 {
+            margin: 0 0 0.45rem 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .onboarding-step { display: none; padding: 0.5rem 0; }
+        .onboarding-step.active { display: block; }
+        .onboarding-scenario-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+        .onboarding-scenario-btn {
+            flex: 1;
+            min-width: 132px;
+            padding: 0.55rem 0.7rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--color-border);
+            background: var(--bg-surface, var(--color-light));
+            color: var(--text-main, #1e293b);
+            cursor: pointer;
+            text-align: left;
+            font-size: 0.88rem;
+            transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+        }
+        .onboarding-scenario-btn:hover {
+            border-color: var(--color-primary, #3b82f6);
+            background: var(--color-light);
+        }
+        .onboarding-scenario-btn.selected {
+            border-color: var(--color-primary, #3b82f6);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.22);
+            background: rgba(59, 130, 246, 0.06);
+        }
+        .onboarding-wizard-nav { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; align-items: center; }
+        .onboarding-step-indicator { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+
+        .fleet-toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.65rem; }
+        .fleet-hosts-table-wrap { overflow-x: auto; border: 1px solid var(--color-border); border-radius: 0.5rem; }
+        table.fleet-data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        table.fleet-data-table th {
+            text-align: left;
+            padding: 0.5rem 0.65rem;
+            background: var(--color-light);
+            color: var(--text-muted);
+            font-weight: 600;
+            border-bottom: 1px solid var(--color-border);
+        }
+        table.fleet-data-table td { padding: 0.5rem 0.65rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+        table.fleet-data-table tbody tr.fleet-host-row { cursor: pointer; transition: background 0.12s; }
+        table.fleet-data-table tbody tr.fleet-host-row:hover { background: rgba(59, 130, 246, 0.06); }
+        table.fleet-data-table tbody tr.fleet-host-row:focus-visible { outline: 2px solid var(--color-primary, #3b82f6); outline-offset: -2px; }
+        table.fleet-data-table tbody tr:last-child td { border-bottom: none; }
+        .fleet-num { font-variant-numeric: tabular-nums; text-align: right; }
+
+        body.dark-mode .onboarding-scenario-btn {
+            background: #0b1220;
+            color: var(--text-main);
+            border-color: #334155;
+        }
+        body.dark-mode .onboarding-scenario-btn:hover {
+            border-color: #60a5fa;
+            background: #111827;
+        }
+        body.dark-mode .onboarding-scenario-btn.selected {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+        }
+        body.dark-mode table.fleet-data-table th { background: #111827; color: var(--text-muted); border-color: #334155; }
+        body.dark-mode table.fleet-data-table td { border-color: #334155; }
+        body.dark-mode table.fleet-data-table tbody tr.fleet-host-row:hover { background: rgba(59, 130, 246, 0.12); }
+
+        .settings-kpis {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.6rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .settings-kpi {
+            border: 1px solid var(--color-border);
+            border-radius: 0.65rem;
+            background: var(--bg-surface);
+            padding: 0.55rem 0.65rem;
+        }
+
+        .settings-kpi-label {
+            color: #6b7280;
+            font-size: 0.75rem;
+            margin-bottom: 0.15rem;
+        }
+
+        .settings-kpi-value {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--color-dark);
+        }
+
+        .settings-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            justify-content: flex-end;
+        }
+
+        .settings-category-filters {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .category-chip {
+            border: 1px solid var(--color-border);
+            background: var(--bg-surface);
+            color: var(--color-dark);
+            border-radius: 999px;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.82rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .category-chip span {
+            background: var(--color-light);
+            border: 1px solid var(--color-border);
+            border-radius: 999px;
+            padding: 0.06rem 0.4rem;
+            font-size: 0.74rem;
+        }
+
+        .category-chip.active {
+            background: var(--color-primary);
+            border-color: var(--color-primary);
+            color: white;
+        }
+
+        .category-chip.active span {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.45);
+            color: white;
+        }
+
+        .settings-summary {
+            font-size: 0.84rem;
+            color: #6b7280;
+        }
+
+        .settings-runtime-banner {
+            border: 1px solid var(--color-border);
+            border-radius: 0.65rem;
+            background: var(--bg-surface);
+            padding: 0.65rem 0.75rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
+        .settings-runtime-main {
+            display: grid;
+            gap: 0.08rem;
+        }
+
+        .settings-runtime-title {
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .settings-runtime-text {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .settings-post-check {
+            border: 1px solid var(--color-border);
+            border-radius: 0.65rem;
+            background: var(--bg-surface);
+            padding: 0.65rem 0.75rem;
+            margin-bottom: 0.75rem;
+            display: grid;
+            gap: 0.45rem;
+        }
+
+        .settings-post-check-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .settings-post-check-summary {
+            font-size: 0.8rem;
+            color: var(--text-main);
+        }
+
+        .settings-post-check-list {
+            margin: 0;
+            padding-left: 1rem;
+            display: grid;
+            gap: 0.2rem;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+
+        .settings-post-check-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.4rem;
+        }
+
+        .settings-group-block {
+            margin-bottom: 0.9rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.7rem;
+            padding: 0.8rem;
+            background: #fbfdff;
+            border-left-width: 4px;
+        }
+
+        .settings-group-block.group-sistem { border-left-color: #2563eb; background: #f8faff; }
+        .settings-group-block.group-guvenlik { border-left-color: #ef4444; background: #fff8f8; }
+        .settings-group-block.group-bildirim { border-left-color: #f59e0b; background: #fffdf7; }
+        .settings-group-block.group-5651-uyum { border-left-color: #10b981; background: #f7fffb; }
+        .settings-group-block.group-panel { border-left-color: #7c3aed; background: #faf7ff; }
+
+        .settings-group-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.65rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.55rem;
+            background: var(--bg-surface);
+            padding: 0.45rem 0.55rem;
+        }
+
+        .settings-group-title-row h4 {
+            margin: 0;
+            font-size: 0.95rem;
+            letter-spacing: 0.01em;
+            color: var(--text-main);
+        }
+
+        .group-toggle-btn {
+            width: 1.65rem;
+            height: 1.65rem;
+            border-radius: 0.45rem;
+            border: 1px solid var(--color-border);
+            background: var(--bg-surface);
+            color: #4b5563;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .group-toggle-btn:hover {
+            background: var(--color-light);
+        }
+
+        .setting-detail-drawer {
+            position: fixed;
+            inset: 0;
+            background: rgba(17, 24, 39, 0.35);
+            z-index: 1200;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.25s ease, visibility 0.25s ease;
+        }
+
+        .setting-detail-drawer.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .setting-detail-panel {
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: min(560px, 100%);
+            height: 100%;
+            background: var(--bg-surface);
+            border-left: 1px solid var(--color-border);
+            box-shadow: var(--shadow-lg);
+            transform: translateX(100%);
+            transition: transform 0.28s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .setting-detail-drawer.show .setting-detail-panel {
+            transform: translateX(0);
+        }
+
+        .setting-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 1rem 1rem 0.85rem;
+            border-bottom: 1px solid var(--color-border);
+            background: var(--color-light);
+        }
+
+        .setting-detail-header h3 {
+            margin: 0;
+            font-size: 1rem;
+        }
+
+        .setting-detail-meta {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 0.2rem;
+        }
+
+        .setting-detail-body {
+            padding: 1rem;
+            overflow: auto;
+            display: grid;
+            gap: 0.9rem;
+        }
+
+        .detail-section {
+            border: 1px solid var(--color-border);
+            border-radius: 0.65rem;
+            padding: 0.75rem;
+            background: #fbfdff;
+        }
+
+        .detail-section h4 {
+            margin: 0 0 0.55rem;
+            font-size: 0.92rem;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.55rem;
+        }
+
+        .detail-item {
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            background: var(--bg-surface);
+        }
+
+        .detail-item span {
+            display: block;
+            color: #6b7280;
+            font-size: 0.75rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .detail-item strong {
+            font-size: 0.84rem;
+            color: var(--color-dark);
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .detail-item-full {
+            grid-column: 1 / -1;
+        }
+
+        .grouped-settings-grid {
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 0.9rem;
+        }
+
+        .setting-card {
+            margin-bottom: 0;
+        }
+
+        .setting-meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.45rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .setting-meta-item {
+            border: 1px solid var(--color-border);
+            border-radius: 0.45rem;
+            padding: 0.4rem 0.5rem;
+            background: var(--bg-surface);
+        }
+
+        .setting-meta-item span {
+            display: block;
+            color: #6b7280;
+            font-size: 0.73rem;
+            margin-bottom: 0.18rem;
+        }
+
+        .setting-meta-item strong {
+            font-size: 0.82rem;
+            color: var(--color-dark);
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .setting-meta-item-full {
+            grid-column: 1 / -1;
+        }
+
+        .setting-input-hint {
+            font-size: 0.78rem;
+            color: #4b5563;
+            background: #f8fbff;
+            border: 1px solid #dbeafe;
+            border-radius: 0.45rem;
+            padding: 0.35rem 0.5rem;
+            margin-bottom: 0.55rem;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .setting-input-error {
+            margin-top: 0.45rem;
+            font-size: 0.78rem;
+            color: #b91c1c;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 0.45rem;
+            padding: 0.3rem 0.5rem;
+        }
+
+        .archive-destination-control {
+            display: grid;
+            gap: 0.45rem;
+        }
+
+        .archive-control-row {
+            display: grid;
+            grid-template-columns: minmax(130px, 165px) 1fr;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .archive-control-hint {
+            font-size: 0.76rem;
+            color: var(--text-muted);
+            border: 1px dashed var(--color-border);
+            background: var(--color-light);
+            border-radius: 0.45rem;
+            padding: 0.35rem 0.45rem;
+        }
+
+        .logs-toolbar {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, 190px));
+            gap: 0.55rem;
+            margin-bottom: 0.7rem;
+        }
+
+        .logs-select {
+            min-width: 0;
+        }
+
+        .logs-summary {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin-bottom: 0.55rem;
+        }
+
+        .logs-table-wrap {
+            border: 1px solid var(--color-border);
+            border-radius: 0.6rem;
+            overflow: auto;
+            max-height: 540px;
+            background: var(--bg-surface);
+        }
+
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            min-width: 980px;
+        }
+
+        .logs-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--color-light);
+            border-bottom: 1px solid var(--color-border);
+            text-align: left;
+            padding: 0.62rem 0.7rem;
+            white-space: nowrap;
+        }
+
+        .logs-table td {
+            border-bottom: 1px solid var(--color-border);
+            padding: 0.55rem 0.7rem;
+            vertical-align: top;
+        }
+
+        .logs-table tr:hover {
+            background: var(--color-light);
+        }
+
+        .log-details {
+            max-width: 520px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.76rem;
+            color: var(--text-muted);
+        }
+
+        .log-console {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            max-height: 480px;
+            overflow-y: auto;
+        }
+
+        .log-console .log-line {
+            padding: 0.25rem 0.5rem;
+            border-bottom: 1px solid rgba(0,0,0,0.04);
+        }
+
+        .log-console .log-line:hover {
+            background: var(--color-light);
+        }
+
+        .log-row-expand {
+            cursor: pointer;
+            color: var(--color-primary);
+            font-size: 0.85rem;
+        }
+
+        .log-row-expand:hover {
+            text-decoration: underline;
+        }
+
+        .log-detail-expanded {
+            background: var(--color-light);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-top: 0.35rem;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .log-detail-kv {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.25rem 1rem;
+            font-size: 0.8rem;
+        }
+
+        .log-detail-kv dt { color: var(--text-muted); margin: 0; }
+        .log-detail-kv dd { margin: 0; }
+
+        .logs-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            margin-top: 0.7rem;
+        }
+
+        .input-invalid {
+            border-color: #ef4444 !important;
+            box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2) !important;
+        }
+
+        /* Timeline */
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 0.7rem;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 0.9rem;
+            position: relative;
+        }
+
+        .timeline-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--color-primary);
+            flex-shrink: 0;
+            margin-top: 0.35rem;
+        }
+
+        .timeline-content {
+            flex: 1;
+            padding: 0.75rem 0.85rem;
+            background: var(--color-light);
+            border-radius: 0.5rem;
+            border: 1px solid var(--color-border);
+        }
+
+        .timeline-time {
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+
+        .timeline-text {
+            font-size: 0.95rem;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            color: #6b7280;
+            padding: 1.5rem;
+            border: 1px dashed var(--color-border);
+            border-radius: 0.5rem;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        body.dark-mode {
+            --bg-main: #0f172a;
+            --bg-surface: #111827;
+            --color-light: #1f2937;
+            --color-border: #374151;
+            --color-dark: #e5e7eb;
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+            --shadow-md: 0 8px 16px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 16px 32px rgba(0, 0, 0, 0.45);
+            --focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.3);
+        }
+
+        body.dark-mode .sidebar {
+            background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+        }
+
+        body.dark-mode .subtitle,
+        body.dark-mode .help-text,
+        body.dark-mode .timeline-time,
+        body.dark-mode .loading,
+        body.dark-mode .settings-summary,
+        body.dark-mode .setting-detail-meta,
+        body.dark-mode .settings-kpi-label,
+        body.dark-mode .setting-meta-item span,
+        body.dark-mode .detail-item span {
+            color: var(--text-muted);
+        }
+
+        body.dark-mode .startup-card {
+            background: rgba(15, 23, 42, 0.45);
+        }
+
+        body.dark-mode .status-success { background: rgba(16, 185, 129, 0.18); color: #bbf7d0; }
+        body.dark-mode .status-danger { background: rgba(239, 68, 68, 0.18); color: #fecaca; }
+        body.dark-mode .status-warning { background: rgba(245, 158, 11, 0.18); color: #fde68a; }
+        body.dark-mode .status-info { background: rgba(59, 130, 246, 0.2); color: #bfdbfe; }
+        body.dark-mode .status-unknown { background: rgba(156, 163, 175, 0.2); color: #d1d5db; }
+        body.dark-mode .badge-info { background: rgba(59, 130, 246, 0.2); color: #bfdbfe; border: 1px solid rgba(96, 165, 250, 0.35); }
+        body.dark-mode .badge-warning { background: rgba(245, 158, 11, 0.2); color: #fde68a; border: 1px solid rgba(245, 158, 11, 0.35); }
+        body.dark-mode .badge-success { background: rgba(16, 185, 129, 0.2); color: #bbf7d0; border: 1px solid rgba(16, 185, 129, 0.35); }
+        body.dark-mode .badge-danger { background: rgba(239, 68, 68, 0.2); color: #fecaca; border: 1px solid rgba(239, 68, 68, 0.35); }
+        body.dark-mode .badge-primary { background: rgba(99, 102, 241, 0.22); color: #c7d2fe; border: 1px solid rgba(129, 140, 248, 0.4); }
+        body.dark-mode .badge-secondary { background: rgba(148, 163, 184, 0.18); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.35); }
+
+        body.dark-mode .settings-group-block,
+        body.dark-mode .settings-group-block.group-sistem,
+        body.dark-mode .settings-group-block.group-guvenlik,
+        body.dark-mode .settings-group-block.group-bildirim,
+        body.dark-mode .settings-group-block.group-5651-uyum,
+        body.dark-mode .settings-group-block.group-panel,
+        body.dark-mode .detail-section {
+            background: #0b1220;
+            border-color: #334155;
+        }
+
+        body.dark-mode .settings-group-title-row {
+            background: #111827;
+            border-color: #334155;
+        }
+
+        body.dark-mode .settings-group-title-row h4 {
+            color: #e5e7eb;
+        }
+
+        body.dark-mode .input-search,
+        body.dark-mode .select-input,
+        body.dark-mode .config-editor,
+        body.dark-mode .category-chip,
+        body.dark-mode .group-toggle-btn,
+        body.dark-mode .health-item,
+        body.dark-mode .service-item,
+        body.dark-mode .stat,
+        body.dark-mode .critical-item,
+        body.dark-mode .overview-mini-kpi,
+        body.dark-mode .services-mini-kpi,
+        body.dark-mode .services-summary,
+        body.dark-mode .overview-freshness-item,
+        body.dark-mode .overview-event-item {
+            background: #0b1220;
+            color: var(--text-main);
+        }
+
+        body.dark-mode .settings-runtime-banner {
+            background: #0b1220;
+            border-color: var(--color-border);
+        }
+
+        body.dark-mode .settings-post-check {
+            background: #0b1220;
+        }
+
+        body.dark-mode .input-search::placeholder {
+            color: #94a3b8;
+        }
+
+        body.dark-mode .setting-input-hint {
+            background: rgba(37, 99, 235, 0.12);
+            border-color: rgba(37, 99, 235, 0.35);
+            color: #cbd5e1;
+        }
+
+        body.dark-mode .editor-help {
+            background: rgba(245, 158, 11, 0.16);
+            border-left-color: rgba(245, 158, 11, 0.72);
+            color: #fde68a;
+        }
+
+        body.dark-mode .editor-help strong,
+        body.dark-mode .editor-help code {
+            color: #fef3c7;
+        }
+
+        body.dark-mode .setting-input-error {
+            background: rgba(127, 29, 29, 0.3);
+            border-color: rgba(239, 68, 68, 0.5);
+            color: #fecaca;
+        }
+
+        body.dark-mode .settings-subnav {
+            background: var(--bg-main, #0f172a);
+        }
+        body.dark-mode .settings-quick-guide,
+        body.dark-mode .archive-control-hint {
+            background: #0b1220;
+            border-color: #334155;
+            color: #cbd5e1;
+        }
+
+        body.dark-mode .settings-quick-guide strong {
+            color: #f1f5f9;
+        }
+
+        body.dark-mode #confirm-danger-modal .modal-content {
+            background: #0b1220;
+            border-color: #334155;
+        }
+        body.dark-mode #confirm-danger-modal .modal-body .alert-warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fcd34d;
+        }
+        body.dark-mode #confirm-danger-modal #confirm-danger-input {
+            background: #1e293b;
+            border-color: #475569;
+            color: #e5e7eb;
+        }
+        body.dark-mode #change-summary-modal .modal-content,
+        body.dark-mode #help-modal .modal-content {
+            background: #0b1220;
+            border-color: #334155;
+        }
+
+        body.dark-mode #change-summary-modal .modal-header,
+        body.dark-mode #change-summary-modal .modal-body,
+        body.dark-mode #change-summary-modal .modal-footer,
+        body.dark-mode #help-modal .modal-header,
+        body.dark-mode #help-modal .modal-body,
+        body.dark-mode #help-modal .modal-footer {
+            background: #0b1220;
+            color: #e5e7eb;
+            border-color: #334155;
+        }
+
+        body.dark-mode #change-summary-body .detail-item,
+        body.dark-mode #change-summary-body .detail-item strong,
+        body.dark-mode #change-summary-body .detail-item span {
+            color: #e5e7eb;
+            background: #111827;
+            border-color: #334155;
+        }
+
+        body.dark-mode #help-modal .modal-body h4,
+        body.dark-mode #help-modal .modal-body h5,
+        body.dark-mode #help-modal .modal-body p,
+        body.dark-mode #help-modal .modal-body li {
+            color: #e5e7eb;
+        }
+
+        body.dark-mode table {
+            background: #0b1220;
+        }
+
+        body.dark-mode .logs-table thead th,
+        body.dark-mode .logs-table tr:hover {
+            background: #0b1220;
+        }
+
+        body.dark-mode .logs-table-wrap {
+            background: #0b1220;
+        }
+
+        body.dark-mode .log-console .log-line:hover {
+            background: #1e293b;
+        }
+
+        body.dark-mode .log-detail-expanded {
+            background: #1e293b;
+            border: 1px solid #334155;
+        }
+
+        body.dark-mode tr:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        body.dark-mode .top-header,
+        body.dark-mode .card,
+        body.dark-mode .card-header,
+        body.dark-mode .modal-content,
+        body.dark-mode .modal-header,
+        body.dark-mode .modal-footer,
+        body.dark-mode .timeline-content,
+        body.dark-mode .file-item,
+        body.dark-mode .btn-icon,
+        body.dark-mode .services-scale-input,
+        body.dark-mode .setting-detail-panel {
+            background: #0b1220;
+            color: var(--text-main);
+            border-color: var(--color-border);
+        }
+
+        body.dark-mode .modal {
+            background-color: rgba(2, 6, 23, 0.72);
+        }
+
+        body.dark-mode .modal-close {
+            color: #cbd5e1;
+        }
+
+        body.dark-mode .btn-secondary {
+            background: #1f2937;
+            color: #e5e7eb;
+            border: 1px solid #374151;
+        }
+
+        body.dark-mode .btn-secondary:hover {
+            background: #334155;
+        }
+
+        body.dark-mode .category-chip span {
+            background: #1f2937;
+            border-color: #374151;
+            color: #cbd5e1;
+        }
+
+        body.dark-mode .input-search,
+        body.dark-mode .select-input,
+        body.dark-mode .config-editor,
+        body.dark-mode .services-scale-input {
+            border-color: #475569;
+        }
+
+        body.dark-mode .select-input {
+            color-scheme: dark;
+        }
+
+        body.dark-mode th,
+        body.dark-mode .logs-table thead th {
+            background: #111827;
+            color: #cbd5e1;
+            border-bottom-color: #374151;
+        }
+
+        body.dark-mode td {
+            border-bottom-color: #273244;
+        }
+
+        body.dark-mode tbody tr:nth-child(even) {
+            background: rgba(51, 65, 85, 0.22);
+        }
+
+        body.dark-mode .alert-success {
+            background: rgba(22, 101, 52, 0.25);
+            color: #bbf7d0;
+        }
+
+        body.dark-mode .alert-danger {
+            background: rgba(153, 27, 27, 0.28);
+            color: #fecaca;
+        }
+
+        body.dark-mode .alert-info {
+            background: rgba(30, 64, 175, 0.28);
+            color: #bfdbfe;
+        }
+
+        body.dark-mode .alert-warning {
+            background: rgba(146, 64, 14, 0.28);
+            color: #fde68a;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .dashboard-container {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                height: auto;
+                position: relative;
+            }
+
+            .logo-section {
+                padding: 1rem 1.5rem 1rem;
+                margin-bottom: 0;
+            }
+
+            .sidebar-footer {
+                position: relative;
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+                margin-top: 1rem;
+                padding: 1rem 1.5rem;
+                bottom: auto;
+                width: 100%;
+            }
+
+            .navigation {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                padding: 1rem;
+                margin-bottom: 0;
+            }
+
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
+            }
+
+            .overview-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .overview-kpi-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .overview-intel-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .services-intel-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .services-grid-table {
+                min-width: 980px;
+            }
+
+            .settings-kpis {
+                grid-template-columns: 1fr;
+            }
+
+            .archive-control-row {
+                grid-template-columns: 1fr;
+            }
+
+            .logs-toolbar {
+                grid-template-columns: 1fr;
+            }
+
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .main-content {
+                padding: 1rem;
+            }
+
+            .top-header {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+                position: static;
+            }
+
+            .header-right {
+                align-self: stretch;
+                justify-content: flex-end;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="startup-splash" class="startup-splash">
+        <div class="startup-card">
+            <div class="startup-logo"><i class="fas fa-shield-halved"></i></div>
+            <div class="startup-title">Log Sistem Enterprise Panel</div>
+            <div class="startup-subtitle">Yönetim arayüzü hazırlanıyor</div>
+            <div class="startup-progress"><div class="startup-progress-bar"></div></div>
+        </div>
+    </div>
+    <div class="dashboard-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <i class="fas fa-layer-group"></i>
+                </div>
+                <h1>Log Sistem</h1>
+                <p>Yönetim Paneli v2.0</p>
+            </div>
+
+            <nav class="navigation">
+                <a class="nav-item active" data-tab="overview" onclick="switchTab('overview')">
+                    <i class="fas fa-gauge-high"></i>
+                    <span>Genel Bakış</span>
+                </a>
+                <a class="nav-item" data-tab="services" onclick="switchTab('services')">
+                    <i class="fas fa-cube"></i>
+                    <span>Servisler</span>
+                </a>
+                <a class="nav-item" data-tab="config" onclick="switchTab('config')">
+                    <i class="fas fa-sliders"></i>
+                    <span>Yapılandırma</span>
+                </a>
+                <a class="nav-item" id="nav-agent-fleet" data-tab="agent-fleet" onclick="switchTab('agent-fleet')">
+                    <i class="fas fa-network-wired"></i>
+                    <span>Uç envanteri</span>
+                </a>
+                <a class="nav-item" data-tab="settings" onclick="switchTab('settings')">
+                    <i class="fas fa-cog"></i>
+                    <span>Ayarlar</span>
+                </a>
+                <a class="nav-item" data-tab="monitoring" onclick="switchTab('monitoring')">
+                    <i class="fas fa-chart-line"></i>
+                    <span>İzleme</span>
+                </a>
+                <a class="nav-item" data-tab="logs" onclick="switchTab('logs')">
+                    <i class="fas fa-file-lines"></i>
+                    <span>Loglar</span>
+                </a>
+                <a class="nav-item" data-tab="archive" onclick="switchTab('archive')">
+                    <i class="fas fa-archive"></i>
+                    <span>Arşiv / WORM</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="version-info">
+                    <small>Sürüm 2.0 Enterprise</small>
+                    <div class="status-indicator" id="system-status">
+                        <span class="pulse"></span>
+                        <span>Hazırlanıyor...</span>
+                    </div>
+                </div>
+                <div class="compliance-badge" title="5651 Sayılı Kanun uyumlu log saklama (2 yıl)">
+                    <i class="fas fa-scale-balanced"></i>
+                    <span>5651 Uyumlu</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-header">
+                <div class="header-left">
+                    <h2 id="page-title">Genel Bakış</h2>
+                    <p id="page-subtitle" class="subtitle">Sistem durumu ve yapılandırma yönetimi</p>
+                </div>
+                <div class="header-right">
+                    <span id="current-user-pill" class="badge badge-info">Kullanıcı: -</span>
+                    <button class="btn-icon" id="theme-toggle-btn" title="Koyu Moda Geç">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <button class="btn-icon" id="refresh-btn" title="Yenile">
+                        <i class="fas fa-arrows-rotate"></i>
+                    </button>
+                    <button class="btn-icon" id="help-btn" title="Yardım">
+                        <i class="fas fa-circle-question"></i>
+                    </button>
+                    <button class="btn-icon" id="logout-btn" title="Çıkış">
+                        <i class="fas fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Alert Container -->
+            <div id="alert-container"></div>
+
+            <div id="disk-guidance-banner" class="disk-guidance-banner disk-guidance-hidden" role="status" aria-live="polite">
+                <div class="disk-guidance-title" id="disk-guidance-title">Depolama</div>
+                <div class="disk-guidance-metrics" id="disk-guidance-metrics"></div>
+                <div id="disk-guidance-body"></div>
+                <div class="disk-guidance-actions">
+                    <button type="button" class="btn btn-sm btn-primary" id="disk-guidance-goto-storage">
+                        <i class="fas fa-hard-drive"></i> Depolama ayarlarına git
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" id="disk-guidance-dismiss" title="Bu tarayıcı oturumu için gizle">
+                        Bu oturumda gizle
+                    </button>
+                </div>
+            </div>
+
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-content active">
+                <div class="overview-layout">
+                    <div class="card card-primary">
+                        <div class="card-header">
+                            <h3><i class="fas fa-heartbeat"></i> Operasyon Özeti</h3>
+                            <span class="badge badge-info">Canlı Durum</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="system-health" class="status-large">
+                                <div class="spinner"></div>
+                                <p>Kontrol ediliyor...</p>
+                            </div>
+                            <div class="health-details">
+                                <div class="health-item">
+                                    <span>Docker</span>
+                                    <span id="docker-status" class="status-badge status-unknown">Bilinmiyor</span>
+                                </div>
+                                <div class="health-item">
+                                    <span>Servisler</span>
+                                    <span id="services-count" class="status-badge status-info">0/0</span>
+                                </div>
+                                <div class="health-item" title="Panel /app/config baglantisinda docker-compose ve .env zorunlu; fluent-bit/grafana/certs klasorleri istege bagli. Veri diski ayri Depolama sekmesinde.">
+                                    <span>Yapılandırma</span>
+                                    <span id="config-status" class="status-badge status-info">Kontrol...</span>
+                                </div>
+                            </div>
+
+                            <div class="overview-kpi-strip">
+                                <div class="overview-kpi">
+                                    <div class="label">Çalışan</div>
+                                    <div class="value" id="running-count">0</div>
+                                </div>
+                                <div class="overview-kpi">
+                                    <div class="label">Durdurulmuş</div>
+                                    <div class="value" id="stopped-count">0</div>
+                                </div>
+                                <div class="overview-kpi">
+                                    <div class="label">Sorunlu</div>
+                                    <div class="value" id="unhealthy-count">0</div>
+                                </div>
+                                <div class="overview-kpi">
+                                    <div class="label">Toplam</div>
+                                    <div class="value" id="total-count">0</div>
+                                </div>
+                            </div>
+
+                            <div class="overview-kpi-strip" style="margin-top:0.65rem;">
+                                <div class="overview-kpi">
+                                    <div class="label">EPS (1dk)</div>
+                                    <div class="value" id="overview-slo-eps">-</div>
+                                </div>
+                                <div class="overview-kpi">
+                                    <div class="label">Drop-Rate (1dk)</div>
+                                    <div class="value" id="overview-slo-drop-rate">-</div>
+                                </div>
+                                <div class="overview-kpi">
+                                    <div class="label">E2E Latency Tahmini</div>
+                                    <div class="value" id="overview-slo-latency">-</div>
+                                </div>
+                                <div class="overview-kpi">
+                                    <div class="label">Bottleneck</div>
+                                    <div class="value status-unknown" id="overview-slo-bottleneck">Bekleniyor</div>
+                                </div>
+                            </div>
+                            <div class="subtitle" id="overview-slo-freshness" style="margin-top:0.45rem;">Henüz alınmadı</div>
+                            <p class="help-text" style="margin-top:0.35rem;font-size:0.78rem;color:var(--muted-text,#6b7280);">Bu satır Fluent Bit metrik trendine dayanır; henüz ingest yokken tire (—) ve bottleneck «Henüz ölçülemedi» beklenen davranıştır.</p>
+                        </div>
+                    </div>
+
+                    <div class="overview-stack">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-flash"></i> Hızlı İşlemler</h3>
+                            </div>
+                            <div class="card-body" style="display: flex; flex-direction: column; gap: 0.65rem;">
+                                <button class="btn btn-success" id="restart-all-btn">
+                                    <i class="fas fa-sync"></i> Tümünü Yeniden Başlat
+                                </button>
+                                <button class="btn btn-info" id="backup-btn">
+                                    <i class="fas fa-save"></i> Yedek Al
+                                </button>
+                                <button class="btn btn-warning" id="validate-config-btn">
+                                    <i class="fas fa-check"></i> Yapılandırmayı Doğrula
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-sliders-h"></i> Operasyon Merkezi</h3>
+                            </div>
+                            <div class="card-body" style="display: flex; flex-direction: column; gap: 0.65rem;">
+                                <div id="ops-summary" class="settings-summary">Ortam bilgisi yükleniyor...</div>
+                                <button class="btn btn-primary" id="ops-sanity-btn">
+                                    <i class="fas fa-stethoscope"></i> Sanity Check Çalıştır
+                                </button>
+                                <button class="btn btn-info" id="ops-flow-btn">
+                                    <i class="fas fa-vial"></i> Flow Test Çalıştır
+                                </button>
+                                <button class="btn btn-warning" id="ops-stream-repair-btn">
+                                    <i class="fas fa-wrench"></i> Stream Search Onarımı
+                                </button>
+                                <div id="ops-action-result" class="settings-summary">Henüz operasyon tetiklenmedi.</div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-rocket"></i> Aktif Servisler</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="active-services-list" class="service-list">
+                                    <p class="loading">Yükleniyor...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-title">
+                    <h3>Yapılandırma Önizlemesi</h3>
+                    <p>Operasyonel olarak sık kullanılan konfigürasyon dosyaları</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h4>📁 Yapılandırma Dosyaları</h4>
+                        <button class="btn btn-sm btn-secondary" onclick="switchTab('config')"><i class="fas fa-arrow-right"></i> Tümünü Gör</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="config-files-overview" class="overview-files">
+                            <p class="loading">Yükleniyor...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h4>⚡ Kritik Bilgi Listesi</h4>
+                        <span class="badge badge-warning">Sekmeler Arası Özet</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="critical-overview-list" class="critical-list">
+                            <p class="loading">Kritik bilgiler hazırlanıyor...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-2" style="margin-top: 1rem;">
+                    <div class="card" id="overview-intel-card">
+                        <div class="card-header">
+                            <h4>🧠 Operasyonel Zeka Özeti</h4>
+                            <span class="badge badge-info">Audit + Operasyon</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="overview-intel-kpis" class="overview-intel-grid">
+                                <div class="overview-mini-kpi"><div class="label">Audit Olay</div><div class="value" id="overview-audit-total">-</div></div>
+                                <div class="overview-mini-kpi"><div class="label">Başarısız Olay</div><div class="value" id="overview-audit-failed">-</div></div>
+                                <div class="overview-mini-kpi"><div class="label">Son Hata</div><div class="value" id="overview-last-failure">-</div></div>
+                                <div class="overview-mini-kpi"><div class="label">Son Yedekleme</div><div class="value" id="overview-last-backup">-</div></div>
+                                <div class="overview-mini-kpi"><div class="label">Son Toplu Doğrulama</div><div class="value" id="overview-last-validation">-</div></div>
+                                <div class="overview-mini-kpi"><div class="label">Son Toplu Restart</div><div class="value" id="overview-last-restart">-</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card" id="overview-freshness-card">
+                        <div class="card-header">
+                            <h4>🛰️ Veri Tazeliği ve Kapsam</h4>
+                            <span class="badge badge-success">Canlı Takip</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="overview-freshness-list" class="overview-freshness-list">
+                                <p class="loading">Veri tazeliği bilgisi hazırlanıyor...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 0.5rem;">
+                    <div class="card-header">
+                        <h4>🚨 Son Kritik Olaylar</h4>
+                        <button class="btn btn-sm btn-secondary" onclick="switchTab('logs')"><i class="fas fa-arrow-right"></i> Audit Sekmesine Git</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="overview-critical-events" class="overview-event-list">
+                            <p class="loading">Kritik olay özeti hazırlanıyor...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Services Tab -->
+            <div id="services" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Hizmetler ve Durumları</h3>
+                        <span class="badge badge-info">Enterprise Operations</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="services-intel-grid" id="services-intel-grid">
+                            <div class="services-mini-kpi"><div class="label">Toplam Servis</div><div class="value" id="services-kpi-total">-</div></div>
+                            <div class="services-mini-kpi"><div class="label">Çalışan</div><div class="value" id="services-kpi-running">-</div></div>
+                            <div class="services-mini-kpi"><div class="label">Sorunlu / Duran</div><div class="value" id="services-kpi-problematic">-</div></div>
+                            <div class="services-mini-kpi"><div class="label">Platform</div><div class="value" id="services-kpi-platform">-</div></div>
+                        </div>
+
+                        <div class="services-toolbar">
+                            <input type="text" id="service-filter" placeholder="Servisleri ara..." class="input-search">
+                            <button class="btn btn-sm btn-secondary" id="services-problematic-toggle">
+                                <i class="fas fa-triangle-exclamation"></i> Sadece Sorunlular
+                            </button>
+                            <button class="btn btn-sm btn-warning" id="services-restart-problematic-btn">
+                                <i class="fas fa-power-off"></i> Sorunluları Yeniden Başlat
+                            </button>
+                            <button class="btn btn-sm btn-secondary" id="services-clear-filter-btn">
+                                <i class="fas fa-filter-circle-xmark"></i> Filtreyi Temizle
+                            </button>
+                        </div>
+
+                        <p id="services-storage-hint" class="help-text" style="margin:0.35rem 0 0.6rem;font-size:0.86rem;line-height:1.45;">
+                            <strong>Veri (bind):</strong> O satırdaki servisin bind mount dizinlerinin <code>du</code> ile yaklaşık toplamı. Konteyner başına ayrı kota yok; veri genelde host’ta paylaşılan bir bölümde durur.
+                            Disk dolunca / yer açmak için aşağıdaki paylaşılan bölüm özetine bakın veya Ayarlar’daki depolama akışını kullanın.
+                        </p>
+                        <div id="services-storage-shared-summary" class="help-text" style="display:none;margin:0 0 0.65rem;padding:0.5rem 0.65rem;border:1px solid rgba(127,127,127,0.25);border-radius:6px;line-height:1.45;"></div>
+
+                        <div id="services-bulk-summary" class="services-summary">
+                            <span>Toplu işlem özeti hazırlanıyor...</span>
+                            <span class="status-badge status-info">Bekleniyor</span>
+                        </div>
+
+                        <div id="services-table" class="services-table">
+                            <div class="loading-spinner">
+                                <div class="spinner"></div>
+                                <p>Servisler yükleniyor...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Configuration Tab -->
+            <div id="config" class="tab-content">
+                <div class="section-title">
+                    <h3>Yapılandırma Dosyalarını Yönet</h3>
+                    <p>Sistem ayarlarını düzenleyin ve yapılandırmaları güncelleyin</p>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>Dosya Listesi</h4>
+                        </div>
+                        <div class="card-body">
+                            <div id="config-file-list" class="file-tree">
+                                <p class="loading">Dosyalar yükleniyor...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>Editör</h4>
+                        </div>
+                        <div class="card-body">
+                            <div id="editor-placeholder" class="editor-placeholder">
+                                <i class="fas fa-file-lines"></i>
+                                <p>Düzenlemek için bir dosya seçin</p>
+                            </div>
+                            <textarea id="config-editor" class="config-editor" style="display: none;"></textarea>
+                            <div id="editor-help" class="editor-help" style="display: none;"></div>
+                            <div id="config-diff-modal" class="modal" style="display:none;">
+                                <div class="modal-content" style="max-width:90%; max-height:80vh; overflow:auto;">
+                                    <div class="modal-header"><h4>Config Değişiklikleri</h4><button class="modal-close" onclick="closeConfigDiffModal()">&times;</button></div>
+                                    <div class="modal-body"><pre id="config-diff-content" style="font-size:0.85rem; white-space:pre-wrap; background:var(--color-light); padding:1rem; border-radius:0.5rem;"></pre></div>
+                                </div>
+                            </div>
+                            <div class="editor-buttons" id="editor-buttons" style="display: none;">
+                                <button class="btn btn-info" id="show-config-diff-btn">
+                                    <i class="fas fa-code-compare"></i> Değişiklikleri Göster
+                                </button>
+                                <button class="btn btn-success" id="save-config-btn">
+                                    <i class="fas fa-save"></i> Kaydet
+                                </button>
+                                <button class="btn btn-secondary" id="cancel-config-btn">
+                                    <i class="fas fa-times"></i> İptal
+                                </button>
+                                <button class="btn btn-info" id="validate-btn">
+                                    <i class="fas fa-check"></i> Doğrula
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent fleet: inventory + enrollment -->
+            <div id="agent-fleet" class="tab-content">
+                <div class="section-title">
+                    <h3>Uç nokta envanteri</h3>
+                    <p>Kayıtlı hostlar, Graylog hacmi ve kurulum / token yönetimi</p>
+                </div>
+
+                <div class="card settings-card-block fleet-inventory-card" style="margin-bottom: 1rem;">
+                    <div class="card-header">
+                        <h4>Kayıtlı uç noktalar</h4>
+                        <span class="badge badge-info">Graylog · API</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="fleet-toolbar">
+                            <input type="search" id="fleet-host-search" class="input-search" placeholder="Host ara…" autocomplete="off" style="min-width:200px; flex:1; max-width:320px;" aria-label="Host ara">
+                            <button type="button" class="btn btn-sm btn-secondary" id="agent-refresh-btn"><i class="fas fa-rotate"></i> Yenile</button>
+                        </div>
+                        <div id="agent-heartbeat-summary" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
+                        <div id="agent-node-summary" class="settings-summary" style="margin-bottom:0.55rem;">—</div>
+                        <div id="fleet-hosts-table" class="help-text">Yükleniyor…</div>
+                    </div>
+                </div>
+
+                <div class="card settings-card-block" id="fleet-enrollment-card" style="margin-bottom: 1rem;">
+                    <div class="card-header">
+                        <h4>Kurulum ve tokenlar</h4>
+                        <span class="badge badge-success">Sihirbaz · gelişmiş</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="help-text" style="margin-top:0;">Profil → tek token → tek kurulum bağlantısı (<code>.sh</code> Linux, <code>.ps1</code> Windows). Farklı işletim sistemi için uygun profille yeni token alın. Token için <strong>admin</strong>.</p>
+                        <div class="agent-fleet-mode-switch" role="tablist" aria-label="Kurulum görünümü">
+                            <button type="button" class="btn btn-sm btn-primary agent-fleet-mode-btn active" id="agent-fleet-mode-wizard" data-mode="wizard" role="tab" aria-selected="true">Sihirbaz</button>
+                            <button type="button" class="btn btn-sm btn-secondary agent-fleet-mode-btn" id="agent-fleet-mode-advanced" data-mode="advanced" role="tab" aria-selected="false">Gelişmiş</button>
+                        </div>
+                        <div id="agent-fleet-panel-wizard" class="agent-fleet-panel">
+                                <div class="onboarding-step-indicator" id="onboarding-wizard-indicator">Adım 1 / 5</div>
+
+                                <div id="onboarding-step-1" class="onboarding-step active">
+                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Kaynak türü</strong>
+                                    <div class="onboarding-scenario-grid">
+                                        <button type="button" class="onboarding-scenario-btn" data-scenario="linux_server" data-summary="Linux — dosya logları">Linux sunucu</button>
+                                        <button type="button" class="onboarding-scenario-btn" data-scenario="network_device" data-summary="Syslog cihazı">Ağ cihazı</button>
+                                        <button type="button" class="onboarding-scenario-btn" data-scenario="web_server" data-summary="Web / uygulama">Web / uygulama</button>
+                                        <button type="button" class="onboarding-scenario-btn" data-scenario="windows_server" data-summary="Windows olay günlüğü">Windows</button>
+                                        <button type="button" class="onboarding-scenario-btn" data-scenario="unsure" data-summary="Genel">Emin değilim</button>
+                                    </div>
+                                </div>
+
+                                <div id="onboarding-step-2" class="onboarding-step">
+                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bu makinede ajan kurulumu mümkün mü?</strong>
+                                    <p class="help-text" style="margin:0.35rem 0;">Windows seçtiyseniz: kurabiliyorsanız «Evet». Yalnızca Linux + «Hayır» → syslog relay.</p>
+                                    <div class="onboarding-scenario-grid">
+                                        <button type="button" class="onboarding-scenario-btn" data-can-install="yes">Evet</button>
+                                        <button type="button" class="onboarding-scenario-btn" data-can-install="no">Hayır / yalnızca syslog</button>
+                                    </div>
+                                </div>
+
+                                <div id="onboarding-step-3" class="onboarding-step">
+                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Merkez adresi (ingest)</strong>
+                                    <p class="help-text" style="margin:0.35rem 0;">UDP hedefi; genelde panele eriştiğiniz adres.</p>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                                        <input id="onboarding-wizard-ingest-host" class="input-search" type="text" placeholder="örn. 10.0.0.5" style="min-width:220px;">
+                                        <input id="onboarding-wizard-ingest-port" class="input-search" type="number" min="1" max="65535" value="5151" style="max-width:100px;">
+                                    </div>
+                                </div>
+
+                                <div id="onboarding-step-4" class="onboarding-step">
+                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Token (admin)</strong>
+                                    <p class="help-text" style="margin:0.35rem 0;">Profili uygular ve token üretir. Komutlar aşağıdaki «Kurulum çıktısı» bölümünde.</p>
+                                    <p class="settings-summary" id="onboarding-wizard-profile-hint" style="margin:0.35rem 0;">—</p>
+                                    <button type="button" class="btn btn-sm btn-primary" id="onboarding-wizard-token-btn"><i class="fas fa-key"></i> Token üret</button>
+                                </div>
+
+                                <div id="onboarding-step-5" class="onboarding-step">
+                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bağlantı testi</strong>
+                                    <p class="help-text" style="margin:0.35rem 0;">Kurulum URL’si değil; yalnızca UDP testi. Graylog’da son 15 dk aranır.</p>
+                                    <p class="settings-summary" id="onboarding-wizard-probe-label" style="font-family:monospace;font-size:0.8rem;">—</p>
+                                    <div style="margin:0.35rem 0; font-size:0.85rem; font-weight:600;">Linux / macOS</div>
+                                    <textarea id="onboarding-wizard-linux-cmd" class="input-search" readonly rows="2" style="width:100%;font-family:monospace;font-size:0.8rem;"></textarea>
+                                    <div style="margin:0.35rem 0; font-size:0.85rem; font-weight:600;">Windows PowerShell</div>
+                                    <textarea id="onboarding-wizard-ps-cmd" class="input-search" readonly rows="8" style="width:100%;font-family:monospace;font-size:0.8rem;"></textarea>
+                                    <div class="onboarding-wizard-nav">
+                                        <button type="button" class="btn btn-sm btn-secondary" id="onboarding-wizard-copy-linux"><i class="fas fa-copy"></i> Kopyala</button>
+                                        <button type="button" class="btn btn-sm btn-secondary" id="onboarding-wizard-copy-ps"><i class="fas fa-copy"></i> Kopyala</button>
+                                        <button type="button" class="btn btn-sm btn-secondary" id="onboarding-wizard-new-probe"><i class="fas fa-rotate"></i> Yeni kod</button>
+                                        <button type="button" class="btn btn-sm btn-success" id="onboarding-wizard-check-graylog"><i class="fas fa-check-circle"></i> Graylog kontrol</button>
+                                    </div>
+                                    <div id="onboarding-wizard-check-result" class="settings-summary" style="margin-top:0.5rem;">—</div>
+                                </div>
+
+                                <div class="onboarding-wizard-nav">
+                                    <button type="button" class="btn btn-sm btn-secondary" id="onboarding-wizard-back"><i class="fas fa-arrow-left"></i> Geri</button>
+                                    <button type="button" class="btn btn-sm btn-primary" id="onboarding-wizard-next"><i class="fas fa-arrow-right"></i> İleri</button>
+                                </div>
+                        </div>
+
+                        <div id="agent-fleet-panel-advanced" class="agent-fleet-panel" style="display: none;">
+                                <p class="help-text" style="margin-top:0;">Relay: <code>syslog-relay-v1</code>. TLS için ingest önünde ters vekil.</p>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
+                                    <select id="agent-profile-select" class="select-input" style="min-width: 280px; flex:1;"></select>
+                                    <input id="agent-ingest-host" class="input-search" type="text" placeholder="Ingest host (boş → otomatik)">
+                                    <input id="agent-ingest-port" class="input-search" type="number" min="1" max="65535" value="5151" style="max-width:140px;">
+                                </div>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
+                                    <input id="agent-company-id" class="input-search" type="text" placeholder="company_id" value="default">
+                                    <input id="agent-site-id" class="input-search" type="text" placeholder="site_id" value="default-site">
+                                    <input id="agent-log-type" class="input-search" type="text" placeholder="log_type" value="system">
+                                    <input id="agent-ttl-minutes" class="input-search" type="number" min="5" max="1440" value="120" style="max-width:140px;">
+                                </div>
+                                <div id="agent-relay-fields" style="display:none; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
+                                    <input id="agent-relay-udp-port" class="input-search" type="number" min="1" max="65535" value="1514" style="max-width:170px;" placeholder="relay UDP">
+                                    <input id="agent-relay-tcp-port" class="input-search" type="number" min="1" max="65535" value="1514" style="max-width:170px;" placeholder="relay TCP">
+                                </div>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.6rem;">
+                                    <button class="btn btn-sm btn-primary" id="agent-create-token-btn"><i class="fas fa-plus"></i> Token + komut</button>
+                                </div>
+                                <div id="agent-profile-summary" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
+                        </div>
+
+                        <div class="agent-fleet-shared-block">
+                                <h5>Kurulum çıktısı</h5>
+                                <div id="agent-install-result" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
+                                <p id="agent-install-kind-hint" class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Token sonrası tek kurulum bağlantısı burada.</p>
+                                <label class="help-text" for="agent-install-url" style="display:block; margin-bottom:0.2rem; font-weight:600;">Kurulum URL</label>
+                                <input id="agent-install-url" class="input-search" type="text" readonly placeholder="…/install/TOKEN.sh veya .ps1" style="margin-bottom:0.55rem;">
+                                <div id="agent-install-row-bash" style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-start; margin-bottom:0.45rem;">
+                                    <div style="flex:1; min-width:280px;">
+                                        <label class="help-text" for="agent-install-command" style="display:block; margin-bottom:0.2rem; font-weight:600;">Linux / relay</label>
+                                        <input id="agent-install-command" class="input-search" type="text" readonly placeholder="curl … | sudo bash" style="width:100%;">
+                                    </div>
+                                    <div style="align-self:flex-end;">
+                                        <button type="button" class="btn btn-sm btn-secondary" id="agent-copy-install-btn"><i class="fas fa-copy"></i> Kopyala</button>
+                                    </div>
+                                </div>
+                                <div id="agent-install-row-win" style="display:none; gap:0.5rem; flex-wrap:wrap; align-items:flex-start; margin-bottom:0.45rem;">
+                                    <div style="flex:1; min-width:280px;">
+                                        <label class="help-text" for="agent-install-command-win" style="display:block; margin-bottom:0.2rem; font-weight:600;">Windows (Yönetici PS)</label>
+                                        <textarea id="agent-install-command-win" class="input-search" readonly rows="4" placeholder="İndir ve çalıştır" style="width:100%; font-family:monospace; font-size:0.8rem;"></textarea>
+                                    </div>
+                                    <div style="align-self:flex-end;">
+                                        <button type="button" class="btn btn-sm btn-secondary" id="agent-copy-install-win-btn"><i class="fas fa-copy"></i> Kopyala</button>
+                                    </div>
+                                </div>
+                                <div id="agent-uninstall-row-win" style="display:none; gap:0.5rem; flex-wrap:wrap; align-items:flex-start; margin-bottom:0.45rem;">
+                                    <div style="flex:1; min-width:280px;">
+                                        <label class="help-text" for="agent-uninstall-url" style="display:block; margin-bottom:0.2rem; font-weight:600;">Windows kaldırma URL</label>
+                                        <input id="agent-uninstall-url" class="input-search" type="text" readonly placeholder="…/uninstall/TOKEN.ps1" style="width:100%; margin-bottom:0.35rem;">
+                                        <label class="help-text" for="agent-uninstall-command-win" style="display:block; margin-bottom:0.2rem; font-weight:600;">Kaldırma (tek komut bloğu — audit’e düşer)</label>
+                                        <textarea id="agent-uninstall-command-win" class="input-search" readonly rows="4" placeholder="Önce Windows token üretin" style="width:100%; font-family:monospace; font-size:0.8rem;"></textarea>
+                                    </div>
+                                    <div style="align-self:flex-end;">
+                                        <button type="button" class="btn btn-sm btn-secondary" id="agent-copy-uninstall-win-btn"><i class="fas fa-trash-alt"></i> Kaldırmayı kopyala</button>
+                                    </div>
+                                </div>
+                                <h5 style="margin-top:0.85rem;">Token işlemleri</h5>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
+                                    <select id="agent-token-revoke-select" class="select-input" style="min-width: 320px; flex:1;">
+                                        <option value="">İptal için token seçin…</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-secondary" id="agent-revoke-token-btn"><i class="fas fa-ban"></i> İptal et</button>
+                                </div>
+                                <div id="agent-token-summary" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
+                                <div id="agent-history-table" class="settings-summary" style="margin-top:0.45rem;">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings" class="tab-content">
+                <div class="section-title">
+                    <h3>Sistem Ayarları</h3>
+                    <p>.env kataloğu, depolama ve doğrulama</p>
+                </div>
+                <nav class="settings-subnav" aria-label="Ayarlar bölümleri">
+                    <a href="#settings-block-summary" class="settings-subnav-link">Özet</a>
+                    <a href="#settings-block-catalog" class="settings-subnav-link">Ayar kataloğu</a>
+                    <a href="#settings-compose-perf-wrap" class="settings-subnav-link settings-subnav-link-compose">Performans (Compose)</a>
+                    <a href="#settings-storage-data-disk" class="settings-subnav-link">Depolama</a>
+                    <a href="#settings-block-release" class="settings-subnav-link">Sürüm</a>
+                    <a href="#settings-block-data-pipeline" class="settings-subnav-link">Veri hattı</a>
+                    <a href="#settings-block-shortcuts" class="settings-subnav-link">Kısayollar</a>
+                    <a href="#settings-k8s-ops-grid" class="settings-subnav-link settings-subnav-link-k8s">Kubernetes</a>
+                </nav>
+
+                <div class="card settings-card-block" id="settings-block-summary" style="margin-bottom: 1rem;">
+                    <div class="card-header">
+                        <h4>Özet ve doğrulama</h4>
+                        <span class="badge badge-info" id="platform-badge">Platform: kontrol ediliyor...</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="settings-kpis">
+                            <div class="settings-kpi">
+                                <div class="settings-kpi-label">Toplam Ayar</div>
+                                <div class="settings-kpi-value" id="settings-total-count">0</div>
+                            </div>
+                            <div class="settings-kpi">
+                                <div class="settings-kpi-label">Gösterilen</div>
+                                <div class="settings-kpi-value" id="settings-visible-count">0</div>
+                            </div>
+                            <div class="settings-kpi">
+                                <div class="settings-kpi-label">Kritik Risk</div>
+                                <div class="settings-kpi-value" id="settings-critical-count">0</div>
+                            </div>
+                        </div>
+                        <p class="help-text">
+                            Bu bölümde kritik ayarları dosya düzenlemeden yönetebilirsiniz. Her ayar için ne işe yaradığı açıklanır, rolünüze göre yetkili olduğunuz alanları düzenlersiniz.
+                        </p>
+                        <div id="settings-runtime-status" class="settings-runtime-banner">
+                            <div class="settings-runtime-main">
+                                <div class="settings-runtime-title">Ayar Uygulama Modu</div>
+                                <div class="settings-runtime-text">Çalışma modu kontrol ediliyor...</div>
+                            </div>
+                            <span class="status-badge status-info">Bekleniyor</span>
+                        </div>
+                        <div id="settings-post-check-card" class="settings-post-check">
+                            <div class="settings-post-check-header">
+                                <div>
+                                    <div class="settings-runtime-title">Ayar Sonrası Otomatik Kontrol</div>
+                                    <div class="settings-post-check-summary" id="settings-post-check-summary">Henüz çalıştırılmadı.</div>
+                                </div>
+                                <span id="settings-post-check-badge" class="status-badge status-unknown">Bekleniyor</span>
+                            </div>
+                            <ul id="settings-post-check-list" class="settings-post-check-list">
+                                <li>Health, ingest ve query smoke kontrolleri burada gösterilir.</li>
+                            </ul>
+                            <div class="settings-post-check-actions">
+                                <button class="btn btn-secondary btn-sm" id="settings-post-check-run-btn"><i class="fas fa-stethoscope"></i> Kontrolü Çalıştır</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card settings-card-block" id="settings-block-catalog" style="margin-bottom: 1rem;">
+                    <div class="card-header" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.5rem;">
+                        <h4 style="margin:0;">Ortam değişkenleri (.env kataloğu)</h4>
+                        <span class="badge badge-secondary">Arama · kategori · kaydet</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="help-text" style="margin-top:0;">Rolünüze göre düzenleyebileceğiniz anahtarlar. Kayıt sonrası otomatik post-check tetiklenebilir; üstteki «Kontrolü Çalıştır» ile isteğe bağlı doğrulama yapın.</p>
+                        <div class="settings-toolbar">
+                            <div class="settings-quick-guide">
+                                <span><strong>1.</strong> Ayarı seç ve değerini güncelle</span>
+                                <span><strong>2.</strong> Detaydan etki alanını kontrol et</span>
+                                <span><strong>3.</strong> Kaydet; gerekirse üstteki kontrolü çalıştırın</span>
+                            </div>
+                            <input type="text" id="settings-search" class="input-search" placeholder="Ayar ara... (ör: signer, smtp, timezone)">
+                            <div class="settings-actions">
+                                <button class="btn btn-secondary btn-sm" id="settings-collapse-all-btn"><i class="fas fa-compress"></i> Tümünü Kapat</button>
+                                <button class="btn btn-secondary btn-sm" id="settings-expand-all-btn"><i class="fas fa-expand"></i> Tümünü Aç</button>
+                            </div>
+                            <div id="settings-category-filters" class="settings-category-filters">
+                                <span class="loading" style="padding:0.4rem 0.6rem;">Kategoriler yükleniyor...</span>
+                            </div>
+                            <div id="settings-summary" class="settings-summary">Kategori ve ayar bilgisi hazırlanıyor...</div>
+                        </div>
+                        <div id="guided-settings-list" style="margin-top: 1rem;">
+                            <p class="loading">Ayarlar yükleniyor...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="settings-compose-perf-wrap" class="card settings-card-block" style="margin-bottom: 1rem; border: 1px solid var(--color-border);">
+                            <div class="card-header">
+                                <h4>⚡ Performans (VM Auto-Tune)</h4>
+                                <span class="badge badge-info">Compose uyumlu</span>
+                            </div>
+                            <div class="card-body">
+                                <p class="help-text">Öneriler, <code>docker-compose.yml</code> içindeki Graylog/OpenSearch giriş noktası ile <strong>aynı formülü</strong> kullanır (%20 rezerv; kalan RAM’de Graylog heap %25, OpenSearch %50, min 512 MB). <strong>Uygula</strong> <code>GRAYLOG_JAVA_HEAP_MB</code> ve <code>OPENSEARCH_JAVA_HEAP_MB</code> yazar; ardından hostta <code>docker compose</code> ile <code>graylog</code> ve <code>opensearch1</code> otomatik yeniden oluşturulur (Docker soketi gerekir). Kapatmak için ortam: <code>LOG_SYSTEM_HEAP_COMPOSE_RECREATE=0</code>. <code>docker-compose.prod.yml</code> gibi farklı profiller sabit <code>JAVA_OPTS</code> kullanabilir.</p>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
+                                    <input id="perf-ram-input" class="input-search" type="number" min="512" max="524288" placeholder="RAM (MB)" style="max-width:140px;">
+                                    <button class="btn btn-sm btn-secondary" id="perf-detect-ram-btn"><i class="fas fa-memory"></i> RAM Tespit Et</button>
+                                    <button class="btn btn-sm btn-primary" id="perf-get-recs-btn"><i class="fas fa-calculator"></i> Önerileri Al</button>
+                                    <button class="btn btn-sm btn-warning" id="perf-apply-btn"><i class="fas fa-bolt"></i> Auto-Tune Uygula</button>
+                                </div>
+                                <div id="perf-recommendations" class="settings-summary" style="margin-bottom:0.45rem;">RAM girin ve önerileri alın.</div>
+                                <div id="perf-apply-result" class="settings-summary">Uygulama sonucu burada görünür.</div>
+                            </div>
+                        </div>
+                        <div id="settings-storage-data-disk" class="card settings-card-block storage-hub-card" style="margin-top: 1rem; margin-bottom: 1rem; border: 1px solid var(--color-border); scroll-margin-top: 5rem;">
+                            <div class="card-header" style="display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:0.75rem;">
+                                <div>
+                                    <h4 style="margin:0;">Depolama</h4>
+                                    <p class="storage-card-subtitle">Log ve arşiv dosyalarının tutulduğu disk; aşağıdaki üç kutu durumu özetler.</p>
+                                </div>
+                                <span id="storage-phase-badge" class="badge badge-warning">Durum yükleniyor…</span>
+                            </div>
+                            <div class="card-body">
+                                <style>
+                                    .storage-hub-card .storage-card-subtitle { margin:0.25rem 0 0 0; font-size:0.86rem; color:var(--text-muted); font-weight:400; max-width:40rem; line-height:1.45; }
+                                    .storage-panel-intro { font-size:0.88rem; line-height:1.45; margin:0 0 0.6rem 0; color:var(--text-main); }
+                                    .storage-hub-pills { display:grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap:0.5rem; margin:0.65rem 0 0.85rem 0; }
+                                    .storage-hub-pill { padding:0.55rem 0.65rem; border-radius:0.5rem; border:1px solid var(--color-border); background:var(--bg-surface); font-size:0.84rem; line-height:1.35; }
+                                    .storage-hub-pill strong { display:block; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted); margin-bottom:0.22rem; font-weight:600; }
+                                    .storage-hub-pill.ok { border-color:rgba(5,150,105,0.42); background:rgba(5,150,105,0.07); }
+                                    .storage-hub-pill.warn { border-color:rgba(217,119,6,0.45); background:rgba(217,119,6,0.09); }
+                                    .storage-hub-pill.bad { border-color:rgba(220,38,38,0.42); background:rgba(254,242,242,0.75); }
+                                    .storage-box { border:1px solid var(--color-border); border-radius:0.5rem; padding:0.65rem 0.85rem; margin-bottom:0.75rem; background:var(--color-light); }
+                                    .storage-box-primary { border-left:3px solid var(--color-primary); background:var(--bg-surface); }
+                                    .storage-box h5 { margin:0 0 0.4rem 0; font-size:0.98rem; font-weight:600; display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; }
+                                    .storage-box h6 { margin:0.5rem 0 0.35rem 0; font-size:0.88rem; font-weight:600; color:var(--color-text-muted, #94a3b8); }
+                                    .storage-box .storage-lead { font-size:0.84rem; margin:0 0 0.5rem 0; color:var(--color-text-muted, #94a3b8); line-height:1.45; }
+                                    details.storage-details { font-size:0.82rem; margin-top:0.35rem; border-top:1px solid var(--color-border); padding-top:0.45rem; }
+                                    details.storage-details summary { cursor:pointer; user-select:none; color:var(--color-info, #0284c7); font-weight:500; }
+                                    details.storage-details .inner { margin-top:0.4rem; line-height:1.45; color:var(--color-text-muted, #94a3b8); }
+                                    #storage-api-stale-banner { display:none; font-size:0.84rem; padding:0.5rem 0.65rem; border-radius:0.4rem; margin-bottom:0.75rem; border:1px solid var(--color-warning, #d97706); background:rgba(217,119,6,0.12); }
+                                    .storage-split-hr { border:0; border-top:1px solid var(--color-border); margin:0.65rem 0; }
+                                    .storage-advanced-panel { margin-top:0.5rem; border:1px dashed var(--color-border); border-radius:0.5rem; padding:0.45rem 0.65rem 0.65rem; background:var(--bg-main); }
+                                    .storage-advanced-panel > summary { cursor:pointer; font-weight:600; font-size:0.9rem; padding:0.35rem 0; list-style-position:outside; }
+                                    .storage-advanced-inner { margin-top:0.5rem; padding-top:0.35rem; border-top:1px solid var(--color-border); }
+                                </style>
+                                <p class="storage-panel-intro">Önerilen veri kökü: <code>/opt/log-system/data</code>. Disk ekledikten sonra önce <strong>Disk listesini yenile</strong>, gerekirse <strong>Sistemi yeni diski tanıtsın</strong> kullanın.</p>
+                                <div id="storage-api-stale-banner" role="status"></div>
+                                <div class="storage-hub-pills" aria-label="Depolama özeti">
+                                    <div id="storage-hub-pill-disk" class="storage-hub-pill"><strong>Veri diski</strong><span>Yükleniyor…</span></div>
+                                    <div id="storage-hub-pill-space" class="storage-hub-pill"><strong>Alan</strong><span>—</span></div>
+                                    <div id="storage-hub-pill-env" class="storage-hub-pill"><strong>Ortam</strong><span>—</span></div>
+                                </div>
+                                <div id="storage-mount-status-banner" class="settings-summary" style="margin-bottom:0.65rem; display:none;" aria-live="polite"></div>
+                                <div id="signing-onboarding-banner" class="settings-summary" style="margin-bottom:0.65rem; display:none;" aria-live="polite"></div>
+                                <div id="storage-mounted-profile-card" class="storage-box storage-box-primary">
+                                    <h5>1 · Kayıtlı veri klasörünü seç</h5>
+                                    <p class="storage-lead">Listeden hazır disk klasörünü seçin veya alttan özel yol yazın. <strong>Kaydet</strong> tıklamadan önce yolu aynen tekrar yazmanız istenir — yanlışlıkla başka diske yazmayı azaltır.</p>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
+                                    <select id="storage-candidate-select" class="select-input" style="min-width: 280px; flex:1;">
+                                        <option value="">Önerilen klasörlerden seçin…</option>
+                                    </select>
+                                    <span id="storage-env-effective-label" class="badge badge-secondary" style="font-size:0.78rem; max-width:100%; white-space:normal; text-align:left;">Ortam: …</span>
+                                    <input type="hidden" id="storage-env-name" value="prod">
+                                    <button class="btn btn-sm btn-primary" id="storage-apply-btn"><i class="fas fa-check"></i> Kaydet</button>
+                                </div>
+                                <div style="margin-bottom:0.55rem;">
+                                    <label class="help-text" style="display:block; margin-bottom:0.3rem;">Onay: yukarıdaki yolu aynen yazın</label>
+                                    <input id="storage-apply-confirm-path" class="input-search" type="text" placeholder="/opt/log-system/data" style="min-width:280px; max-width:100%; flex:1;" spellcheck="false" autocomplete="off">
+                                </div>
+                                <div id="storage-ack-root-row" class="help-text" style="display:none; margin-bottom:0.55rem; padding:0.45rem 0.55rem; border-radius:0.4rem; border:1px solid var(--color-border); background:rgba(245,158,11,0.08); font-size:0.84rem; line-height:1.4;">
+                                    <label style="margin:0; cursor:pointer; display:flex; align-items:flex-start; gap:0.45rem;">
+                                        <input type="checkbox" id="storage-ack-same-as-root-cb" style="margin-top:0.2rem;">
+                                        <span><strong>Tek disk kabulü:</strong> Logları sistem diskinde tutmayı bilerek seçiyorum.</span>
+                                    </label>
+                                </div>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
+                                    <input id="storage-custom-path" class="input-search" type="text" placeholder="Listede yoksa: /mnt/logdata" style="min-width:280px; flex:1;" spellcheck="false">
+                                    <span class="help-text" style="margin:0;">Özel yol doluysa liste yerine o kullanılır.</span>
+                                </div>
+                                <div id="storage-scan-summary" class="settings-summary">Adaylar henüz yüklenmedi.</div>
+                                <div id="storage-apply-result" class="settings-summary" style="margin-top:0.45rem;">Henüz kayıt yok.</div>
+                                </div>
+                                <div class="storage-quick-actions" style="display:flex; gap:0.5rem; flex-wrap:wrap; margin:0.35rem 0 0.75rem 0;">
+                                    <button class="btn btn-sm btn-secondary" id="storage-refresh-btn"><i class="fas fa-rotate"></i> Disk listesini yenile</button>
+                                    <button class="btn btn-sm btn-info" id="storage-rescan-bus-btn" title="Yeni disk görünmüyorsa"><i class="fas fa-plug"></i> Sistemi yeni diski tanıtsın</button>
+                                </div>
+                                <details class="storage-advanced-panel">
+                                    <summary>İlk kurulum, ham disk ve kapasite büyütme (ileri düzey)</summary>
+                                    <div class="storage-advanced-inner">
+                                <details class="storage-details" style="margin-bottom:0.65rem; border:0; padding-top:0;"><summary>Sanallaştırıcıda disk ekleme — kısa özet</summary>
+                                    <div id="storage-vcenter-workflow" class="inner" style="margin-top:0.4rem;"></div>
+                                    <div class="inner" style="margin-top:0.35rem;">İkinci diski VM’e ekleyin; kurulum tamamlanınca burada yeni ham disk hazırlığı kapanır. Aynı diski büyüttüyseniz aşağıdaki «Mevcut veri diski» bölümünü kullanın.</div>
+                                </details>
+                                <div id="storage-first-setup-bundle" class="storage-box">
+                                    <h5><span class="badge badge-primary">A</span> İlk kurulum — yeni veri diski</h5>
+                                    <p class="storage-lead">Yalnızca veri henüz OS diskiyle aynıyken. Önerilen akış veya elle ham disk.</p>
+                                    <h6>Önerilen (★ disk)</h6>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                                        <button type="button" class="btn btn-sm btn-secondary" id="storage-recommended-plan-btn"><i class="fas fa-route"></i> Planı yükle</button>
+                                        <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.85rem;">
+                                            <input type="checkbox" id="storage-recommended-rescan-cb"> Önce veriyolu tara
+                                        </label>
+                                    </div>
+                                    <div id="storage-recommended-plan-summary" class="settings-summary" style="margin-top:0.45rem; font-size:0.88rem;">Plan için düğmeye basın.</div>
+                                    <div id="storage-recommended-actions" style="margin-top:0.65rem; display:none;">
+                                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.5rem;">
+                                            <input id="storage-recommended-confirm" class="input-search" type="text" placeholder="Onay: /dev/sdb gibi tam yol" style="min-width:260px; flex:1;" spellcheck="false" autocomplete="off">
+                                            <button type="button" class="btn btn-sm btn-danger" id="storage-complete-recommended-btn"><i class="fas fa-bolt"></i> Tam kur</button>
+                                        </div>
+                                        <div style="display:flex; flex-wrap:wrap; gap:0.55rem; align-items:center; font-size:0.85rem;">
+                                            <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-wipe"> Wipe (bölüm sil)</label>
+                                            <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-relocate"> Dolu <code>data</code> → yedek</label>
+                                            <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-rescan-first" checked> Kurulum öncesi tara</label>
+                                        </div>
+                                    </div>
+                                    <div id="storage-recommended-result" class="settings-summary" style="margin-top:0.4rem; font-size:0.88rem;"></div>
+                                    <details class="storage-details"><summary>Ne zaman kullanılmaz</summary>
+                                        <div class="inner">Veri zaten ayrı diskteyse bu bölüm kilitlenir; yanlış disk seçimi veri kaybına yol açar.</div>
+                                    </details>
+                                    <hr class="storage-split-hr">
+                                    <h6>Elle — ham disk listesi <span class="badge badge-danger" style="font-size:0.65rem;">risk</span></h6>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.45rem;">
+                                        <select id="storage-raw-disk-select" class="select-input" style="min-width:240px; flex:1;">
+                                            <option value="">Ham disk…</option>
+                                        </select>
+                                    </div>
+                                    <div id="storage-raw-disk-hint" class="help-text" style="margin-bottom:0.45rem; font-size:0.84rem;">Önce üstteki «Disk listesini yenile» ile liste dolsun.</div>
+                                    <div style="display:flex; flex-wrap:wrap; gap:0.55rem; align-items:center; margin-bottom:0.45rem; font-size:0.85rem;">
+                                        <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-wipe-disk"> Wipe</label>
+                                        <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;" title="data → data.panel-relocate-…"><input type="checkbox" id="storage-relocate-mount-dir"> Dolu mount → yedek</label>
+                                    </div>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                                        <input id="storage-confirm-device" class="input-search" type="text" placeholder="Onay: /dev/sdb" style="min-width:220px; flex:1;" spellcheck="false" autocomplete="off">
+                                        <button class="btn btn-sm btn-danger" id="storage-prepare-disk-btn"><i class="fas fa-hard-drive"></i> Hazırla + .env</button>
+                                    </div>
+                                    <div id="storage-prepare-result" class="settings-summary" style="margin-top:0.45rem; font-size:0.88rem;">—</div>
+                                    <details class="storage-details"><summary>Teknik not</summary>
+                                        <div class="inner">GPT, tek ext4, <code>fstab</code>. İsteğe bağlı: <code>LOG_SYSTEM_PREPARE_DISK_NO_NETWORK=1</code> ile panel imajı kullanılır.</div>
+                                    </details>
+                                </div>
+                                <div id="storage-grow-card" class="storage-box">
+                                    <h5><span class="badge badge-secondary">2</span> Mevcut veri diskinin alanını büyüt</h5>
+                                    <p class="storage-lead">Sanallaştırıcıda <strong>aynı</strong> veri diskinizi genişlettikten sonra buradan bölüm ve dosya sistemini uzatın.</p>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                                        <button type="button" class="btn btn-sm btn-secondary" id="storage-grow-refresh-btn"><i class="fas fa-arrows-rotate"></i> Durumu kontrol et</button>
+                                        <button type="button" class="btn btn-sm btn-warning" id="storage-grow-exec-btn" style="display:none;"><i class="fas fa-expand"></i> Alanı genişlet</button>
+                                    </div>
+                                    <div id="storage-grow-summary" class="settings-summary" style="margin-top:0.45rem; font-size:0.88rem;">—</div>
+                                    <div id="storage-grow-confirm-row" style="display:none; margin-top:0.5rem;">
+                                        <label class="help-text" style="display:block; margin-bottom:0.35rem;">İşlemden önce bölüm yolunu <strong>aynen</strong> yazın: <code id="storage-grow-expected-hint">—</code></label>
+                                        <input id="storage-grow-confirm-part" class="input-search" type="text" placeholder="/dev/sdb1" style="max-width:340px; width:100%;" spellcheck="false" autocomplete="off">
+                                    </div>
+                                    <div id="storage-grow-result" class="settings-summary" style="margin-top:0.35rem; font-size:0.88rem;"></div>
+                                </div>
+                                <div id="storage-os-grow-card" class="storage-box" style="border-left:3px solid var(--color-warning, #d97706);">
+                                    <h5><span class="badge badge-warning">OS</span> İşletim sistemi diski (dikkat)</h5>
+                                    <p class="storage-lead">Yalnızca <strong>kök (/) diski</strong> büyüttüyseniz kullanın. Önce durumu yenileyin; gerekirse VM yeniden başlatın. Yedek alın — yanlış disk seçimi veri kaybına yol açabilir.</p>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                                        <button type="button" class="btn btn-sm btn-secondary" id="storage-os-grow-refresh-btn"><i class="fas fa-arrows-rotate"></i> OS durumu yenile</button>
+                                        <button type="button" class="btn btn-sm btn-warning" id="storage-os-grow-exec-btn" style="display:none;"><i class="fas fa-expand"></i> Kök FS genişlet</button>
+                                    </div>
+                                    <div id="storage-os-grow-summary" class="settings-summary" style="margin-top:0.45rem; font-size:0.88rem;">—</div>
+                                    <div id="storage-os-grow-confirm-row" style="display:none; margin-top:0.5rem;">
+                                        <label class="help-text" style="display:block; margin-bottom:0.35rem;">Onay: kök aygıt yolunu (düz kurulumda bölüm, LVM’de kök LV) <strong>aynen</strong> yazın: <code id="storage-os-grow-expected-hint">—</code></label>
+                                        <input id="storage-os-grow-confirm-part" class="input-search" type="text" placeholder="/dev/sda1 veya /dev/mapper/…" style="max-width:340px; width:100%;" spellcheck="false" autocomplete="off">
+                                    </div>
+                                    <div id="storage-os-grow-result" class="settings-summary" style="margin-top:0.35rem; font-size:0.88rem;"></div>
+                                </div>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                        <div class="card settings-card-block" id="settings-block-release" style="margin-top: 1rem; margin-bottom: 1rem; border: 1px solid var(--color-border);">
+                            <div class="card-header">
+                                <h4>🚀 Release Yönetimi</h4>
+                                <span class="badge badge-warning">Promotion / Rollback</span>
+                            </div>
+                            <div class="card-body">
+                                <p class="help-text">Mevcut release tag ve promotion komutları. Otomatik rollback: deploy başarısız olursa önceki tag'e dönülür.</p>
+                                <div id="release-status-info" class="health-details" style="margin-bottom:0.75rem;">
+                                    <p class="loading">Yükleniyor...</p>
+                                </div>
+                                <div class="help-text" style="font-size:0.85rem;">
+                                    <strong>Promote:</strong> <code>make promote-staging TAG=v1.0.0</code> veya <code>make promote-prod TAG=v1.0.0</code>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card settings-card-block" id="settings-block-data-pipeline" style="margin-top: 1rem; margin-bottom: 1rem; border: 1px solid var(--color-border);">
+                            <div class="card-header">
+                                <h4>📋 Normalizasyon (QC → mapping)</h4>
+                                <span class="badge badge-info">QC → Mapping → Publish</span>
+                            </div>
+                            <div class="card-body">
+                                <p class="help-text">Quality Control stream'den örnek mesaj seçin, vendor/product/os_major doğrulayın, lookup tablosuna ekleyin. Lookup 60 sn içinde yenilenir.</p>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.6rem;">
+                                    <button class="btn btn-sm btn-secondary" id="qc-samples-refresh-btn"><i class="fas fa-rotate"></i> QC Örneklerini Yükle</button>
+                                </div>
+                                <div id="qc-samples-list" class="file-tree" style="margin-bottom:0.75rem; max-height:200px; overflow-y:auto;">
+                                    <p class="loading">QC örnekleri yüklenmedi.</p>
+                                </div>
+                                <div id="normalization-add-form" style="display:none; padding:0.75rem; background:var(--color-light); border-radius:0.5rem; margin-bottom:0.6rem;">
+                                    <strong>Yeni mapping ekle:</strong>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-top:0.5rem;">
+                                        <input id="norm-vendor" class="input-search" type="text" placeholder="vendor" style="max-width:120px;">
+                                        <input id="norm-product" class="input-search" type="text" placeholder="product" style="max-width:120px;">
+                                        <input id="norm-os-major" class="input-search" type="text" placeholder="os_major" value="unknown" style="max-width:80px;">
+                                        <input id="norm-profile" class="input-search" type="text" placeholder="profile (opsiyonel)" style="max-width:140px;">
+                                        <input id="norm-src-field" class="input-search" type="text" placeholder="src field" value="src" style="max-width:100px;">
+                                        <input id="norm-dst-field" class="input-search" type="text" placeholder="dst field" value="dst" style="max-width:100px;">
+                                        <button class="btn btn-sm btn-info" id="norm-dry-run-btn"><i class="fas fa-eye"></i> Önizle</button>
+                                        <button class="btn btn-sm btn-success" id="norm-add-mapping-btn"><i class="fas fa-plus"></i> Ekle</button>
+                                    </div>
+                                    <div id="norm-dry-run-preview" class="settings-summary" style="margin-top:0.5rem; display:none; font-family:monospace; font-size:0.85rem; white-space:pre-wrap; max-height:120px; overflow-y:auto;"></div>
+                                    <div id="norm-add-result" class="settings-summary" style="margin-top:0.5rem;"></div>
+                                </div>
+                                <div id="normalization-lookup-rows" class="file-tree" style="max-height:180px; overflow-y:auto;">
+                                    <p class="loading">Lookup satırları yükleniyor...</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card settings-card-block" id="settings-block-shortcuts" style="margin-top: 1rem; margin-bottom: 1rem; border: 1px solid var(--color-border);">
+                            <div class="card-header">
+                                <h4>⚙️ Yapılandırma kısayolları</h4>
+                                <span class="badge badge-info">Yapılandırma editörü</span>
+                            </div>
+                            <div class="card-body">
+                                <p class="help-text">Sık kullanılan dosyaları <strong>Yapılandırma</strong> sekmesinde açar; düzenleme rolünüze bağlıdır.</p>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                                    <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('grafana_config/dashboards/master_dashboard.json')"><i class="fas fa-chart-line"></i> SOC Dashboard JSON</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('grafana_config/alerting/rules.yaml')"><i class="fas fa-bell"></i> Grafana Alert Kuralları</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('grafana_config/alerting/contact-points.yaml')"><i class="fas fa-paper-plane"></i> Contact Point</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('scripts/monitoring/telegram_watchdog.sh')"><i class="fab fa-telegram"></i> Telegram Watchdog</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('scripts/monitoring/alert_webhook_server.py')"><i class="fas fa-code-branch"></i> Webhook Bridge</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('scripts/testing/test-log-flow.sh')"><i class="fas fa-vial"></i> Log Flow Test</button>
+                                </div>
+                                <div id="settings-ops-snapshot" class="settings-summary">Hazırlık özeti hazırlanıyor...</div>
+                            </div>
+                        </div>
+
+                <div class="grid-2 settings-card-block" id="settings-k8s-ops-grid" style="margin-bottom: 1.5rem; display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>📈 HPA Politika Merkezi</h4>
+                            <span class="badge badge-success">Auto Scale</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="help-text">Servislerin min/max replica ve CPU/Memory hedeflerini no-code olarak yönetin.</p>
+                            <div id="hpa-policies-list" class="file-tree">
+                                <p class="loading">HPA politikaları yükleniyor...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>🔁 Rollout / Rollback Merkezi</h4>
+                            <span class="badge badge-warning">Deployment</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="help-text">Deployment yeniden başlatma ve revision bazlı geri dönüş işlemleri.</p>
+                            <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
+                                <select id="rollout-deployment-select" class="select-input" style="flex:1;"></select>
+                                <button class="btn btn-info btn-sm" onclick="loadRolloutHistory()"><i class="fas fa-rotate"></i> Geçmiş</button>
+                            </div>
+                            <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
+                                <button class="btn btn-warning btn-sm" onclick="restartSelectedDeployment()"><i class="fas fa-power-off"></i> Restart</button>
+                            </div>
+                            <div id="rollout-history-list" class="timeline">
+                                <p class="loading">Deployment seçin.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Monitoring Tab -->
+            <div id="monitoring" class="tab-content">
+                <div class="section-title">
+                    <h3>Sistem İzlemesi</h3>
+                    <p>Gerçek zamanlı sistem durumu ve performans metrikleri</p>
+                </div>
+
+                <div class="grid-2" style="margin-bottom: 1.5rem;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>📥 Ingest Rate</h4>
+                            <span class="badge badge-info" id="obs-ingest-badge">-</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="help-text">Fluent Bit UDP input kayıt sayısı</p>
+                            <div id="obs-ingest-value" style="font-size:1.5rem; font-weight:600;">-</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>💾 Disk Basıncı</h4>
+                            <span class="badge badge-warning" id="obs-disk-badge">-</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="help-text">Data dizini kullanım oranı</p>
+                            <div id="obs-disk-value" style="font-size:1.5rem; font-weight:600;">-</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>📋 QC Stream (1h)</h4>
+                            <span class="badge badge-info" id="obs-qc-badge">-</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="help-text">quality_control stream mesaj sayısı</p>
+                            <div id="obs-qc-value" style="font-size:1.5rem; font-weight:600;">-</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>⚠️ Output Hataları</h4>
+                            <span class="badge badge-danger" id="obs-errors-badge">-</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="help-text">Fluent Bit output hata sayısı</p>
+                            <div id="obs-errors-value" style="font-size:1.5rem; font-weight:600;">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>💾 Kaynak Kullanımı</h4>
+                        </div>
+                        <div class="card-body">
+                            <p class="help-text" style="margin-bottom:0.75rem;">İlk iki çubuk <strong>gerçek CPU/RAM ölçümü değildir</strong>; Docker çekirdek servislerinin çalışma ve sağlık özetidir. Depolama, panelin gördüğü kök disk doluluğudur (genelde VM ana diski).</p>
+                            <div style="margin-bottom: 1rem;">
+                                <label>Çalışan servis payı</label>
+                                <div class="progress">
+                                    <div class="progress-bar" id="cpu-usage" style="width: 0%; background: linear-gradient(90deg, #10b981, #34d399);"></div>
+                                </div>
+                                <span id="cpu-value">—</span>
+                            </div>
+                            <div style="margin-bottom: 1rem;">
+                                <label>Sağlık uyarısı (unhealthy / durmuş)</label>
+                                <div class="progress">
+                                    <div class="progress-bar" id="mem-usage" style="width: 0%; background: linear-gradient(90deg, #f59e0b, #ef4444);"></div>
+                                </div>
+                                <span id="mem-value">—</span>
+                            </div>
+                            <div>
+                                <label>Depolama (disk doluluğu)</label>
+                                <div class="progress">
+                                    <div class="progress-bar" id="disk-usage" style="width: 0%"></div>
+                                </div>
+                                <span id="disk-value">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h4>📈 Hizmet Sağlığı</h4>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="healthChart" style="max-height: 300px;"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logs" class="tab-content">
+                <div class="section-title">
+                    <h3>Sistem Logları</h3>
+                    <p>Panel işlem geçmişi ve Docker container logları</p>
+                </div>
+
+                <!-- Docker Container Logları -->
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h4><i class="fas fa-terminal"></i> Container Logları</h4>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                            <select id="container-logs-select" class="select-input" style="min-width:180px;">
+                                <option value="">Container seçin...</option>
+                            </select>
+                            <select id="container-logs-tail" class="select-input" style="width:100px;">
+                                <option value="50">Son 50</option>
+                                <option value="100">Son 100</option>
+                                <option value="200" selected>Son 200</option>
+                                <option value="500">Son 500</option>
+                            </select>
+                            <button class="btn btn-sm btn-primary" id="container-logs-load-btn"><i class="fas fa-play"></i> Yükle</button>
+                            <button class="btn btn-sm btn-secondary" id="container-logs-refresh-btn"><i class="fas fa-rotate"></i> Yenile</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="container-logs-viewer" class="logs-table-wrap log-console">
+                            <p class="loading">Container seçip "Yükle" butonuna tıklayın.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel İşlem Geçmişi (Audit) -->
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h4><i class="fas fa-history"></i> Panel İşlem Geçmişi (Audit)</h4>
+                        <button class="btn btn-sm btn-secondary" onclick="loadAuditEvents()"><i class="fas fa-rotate"></i> Yenile</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="audit-events-list" class="timeline">
+                            <p class="loading">Audit olayları yükleniyor...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audit Tablo Görünümü -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4><i class="fas fa-table-list"></i> Audit Tablo Görünümü</h4>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <button class="btn btn-sm btn-secondary" id="logs-refresh-btn"><i class="fas fa-rotate"></i> Yenile</button>
+                            <button class="btn btn-sm btn-secondary" id="logs-export-btn"><i class="fas fa-file-export"></i> JSON Dışa Aktar</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="logs-toolbar">
+                            <input id="logs-search-input" class="input-search" type="text" placeholder="Ara... (action, user, role, detay)">
+                            <select id="log-service-filter" class="select-input logs-select">
+                                <option value="">Tüm Olaylar</option>
+                            </select>
+                            <select id="log-level-filter" class="select-input logs-select">
+                                <option value="">Tüm Seviyeler</option>
+                                <option value="ERROR">Hata</option>
+                                <option value="WARN">Uyarı</option>
+                                <option value="INFO">Bilgi</option>
+                            </select>
+                            <select id="logs-page-size" class="select-input logs-select">
+                                <option value="25">25 / sayfa</option>
+                                <option value="50" selected>50 / sayfa</option>
+                                <option value="100">100 / sayfa</option>
+                            </select>
+                        </div>
+
+                        <div id="logs-summary" class="logs-summary">Kayıtlar hazırlanıyor...</div>
+
+                        <div id="logs-viewer" class="logs-table-wrap">
+                            <p class="loading">Loglar yükleniyor...</p>
+                        </div>
+
+                        <div class="logs-pagination">
+                            <button class="btn btn-sm btn-secondary" id="logs-prev-page"><i class="fas fa-chevron-left"></i> Önceki</button>
+                            <span id="logs-page-indicator" class="badge badge-info">Sayfa 1 / 1</span>
+                            <button class="btn btn-sm btn-secondary" id="logs-next-page">Sonraki <i class="fas fa-chevron-right"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Archive / WORM Tab -->
+            <div id="archive" class="tab-content">
+                <div class="section-title">
+                    <h3>Arşiv & WORM Durumu</h3>
+                    <p>5651 uyumlu ham arşiv, imzalı dosyalar ve WORM depolama durumu</p>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4><i class="fas fa-folder-open"></i> Arşiv Durumu</h4>
+                            <button class="btn btn-sm btn-secondary" onclick="loadArchiveStatus()"><i class="fas fa-rotate"></i> Yenile</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="archive-retry-badge" class="status-badge status-info" style="margin-bottom:0.75rem; display:none;">Retry kuyruğu: 0</div>
+                            <div id="archive-entries-list" class="file-tree">
+                                <p class="loading">Arşiv durumu yükleniyor...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h4><i class="fas fa-life-cycle"></i> Retention & Lifecycle</h4>
+                        </div>
+                        <div class="card-body">
+                            <div id="archive-retention-info">
+                                <p class="loading">Retention bilgisi yükleniyor...</p>
+                            </div>
+                            <div class="help-text" style="margin-top:0.75rem;">
+                                OpenSearch ISM: graylog-90gun. Hot 7d → Warm 83d → Delete (90 gün). Grafana/Graylog tam aranabilir. WORM arşiv 2 yıl (5651).
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="setting-detail-drawer" class="setting-detail-drawer" onclick="if(event.target===this) closeSettingDetail()">
+        <aside class="setting-detail-panel">
+            <div class="setting-detail-header">
+                <div>
+                    <h3 id="setting-detail-title">Ayar Detayı</h3>
+                    <div id="setting-detail-meta" class="setting-detail-meta">Anahtar: -</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="closeSettingDetail()"><i class="fas fa-xmark"></i> Kapat</button>
+            </div>
+            <div class="setting-detail-body">
+                <section class="detail-section">
+                    <h4>Etki Analizi</h4>
+                    <div id="setting-detail-impact">
+                        <p class="loading">Etki bilgisi yükleniyor...</p>
+                    </div>
+                </section>
+                <section class="detail-section">
+                    <h4>Son Değişiklik Geçmişi</h4>
+                    <div id="setting-detail-audit" class="timeline">
+                        <p class="loading">Audit geçmişi yükleniyor...</p>
+                    </div>
+                </section>
+            </div>
+        </aside>
+    </div>
+
+    <div id="fleet-host-modal" class="modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="fleet-host-modal-title">
+        <div class="modal-content" style="max-width:640px;">
+            <div class="modal-header">
+                <h3 id="fleet-host-modal-title">Uç nokta</h3>
+                <button type="button" class="modal-close" onclick="closeFleetHostModal()" aria-label="Kapat">&times;</button>
+            </div>
+            <div class="modal-body" id="fleet-host-modal-body">
+                <p class="loading">Yükleniyor…</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="change-summary-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="change-summary-title">Değişiklik Özeti</h3>
+                <button class="modal-close" onclick="closeChangeSummaryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="help-text" style="margin-bottom:0.75rem;">Kaydetmeden önce etki alanını kontrol edin.</p>
+                <div id="change-summary-body"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeChangeSummaryModal()">İptal</button>
+                <button class="btn btn-success" onclick="confirmSettingChangeSave()"><i class="fas fa-check"></i> Onayla ve Kaydet</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tehlikeli İşlem Onay Modal -->
+    <div id="confirm-danger-modal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:480px;">
+            <div class="modal-header" style="border-left:4px solid var(--color-danger);">
+                <h3><i class="fas fa-triangle-exclamation" style="color:var(--color-danger);"></i> İşlemi Onaylayın</h3>
+                <button class="modal-close" onclick="closeConfirmDangerModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-danger-message" class="alert alert-warning" style="margin-bottom:0.75rem;"></p>
+                <p id="confirm-danger-detail" class="help-text" style="margin:0; font-size:0.85rem;"></p>
+                <div id="confirm-danger-typeto" style="display:none; margin-top:1rem;">
+                    <label for="confirm-danger-input" class="help-text">Devam etmek için <strong>ONAYLA</strong> yazın:</label>
+                    <input type="text" id="confirm-danger-input" class="input-search" placeholder="ONAYLA" style="margin-top:0.4rem; width:100%;" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeConfirmDangerModal()">İptal</button>
+                <button class="btn btn-danger" id="confirm-danger-submit" onclick="confirmDangerSubmit()" disabled><i class="fas fa-check"></i> Onayla</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Yardım ve Kılavuz</h3>
+                <button class="modal-close" onclick="closeModal('help-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h4>🎯 Sistem Yönetim Paneline Hoş Geldiniz</h4>
+                <p>Bu birleşik yönetim paneli aracılığıyla tüm sistem ayarlarını merkezi olarak kontrol edebilirsiniz.</p>
+                
+                <h5>📚 Bölümler:</h5>
+                <ul>
+                    <li><strong>Genel Bakış:</strong> Sistem durumu ve temel istatistikler</li>
+                    <li><strong>Servisler:</strong> Tüm hizmetleri yönetin ve kontrolü</li>
+                    <li><strong>Yapılandırma:</strong> Yapılandırma dosyalarını düzenleyin</li>
+                    <li><strong>Ayarlar:</strong> Sistem genelinde özel ayarlar</li>
+                    <li><strong>İzleme:</strong> Gerçek zamanlı sistem metrikleri</li>
+                    <li><strong>Loglar:</strong> Sistem loglarını görüntüleyin</li>
+                    <li><strong>Arşiv / WORM:</strong> 5651 uyumlu arşiv durumu ve retention</li>
+                </ul>
+
+                <h5>📜 5651 Sayılı Kanun Uyumu:</h5>
+                <p>Bu sistem 5651 sayılı kanun gereksinimlerine uygun olarak yapılandırılmıştır:</p>
+                <ul>
+                    <li><strong>OpenSearch (arama):</strong> 90 gün · <strong>WORM (5651):</strong> 2 yıl (730 gün)</li>
+                    <li><strong>WORM arşiv:</strong> Değiştirilemez, imzalı saklama</li>
+                    <li><strong>Zaman damgası:</strong> TÜBİTAK/OpenSSL ile bütünlük teyidi</li>
+                </ul>
+
+                <h5>⚠️ Önemli Notlar:</h5>
+                <ul>
+                    <li>Tehlikeli işlemler (servis durdurma, yeniden başlatma) onay gerektirir</li>
+                    <li>Konfigürasyon değişiklikleri otomatik olarak yedeklenecektir</li>
+                    <li>Bazı değişiklikler servis yeniden başlatmasını gerektirebilir</li>
+                    <li>Değişiklikler önceden doğrulanacaktır</li>
+                    <li>Her zaman bir test ortamında değişiklikleri deneyin</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('help-modal')">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/dashboard-utils.js', v='20260226-2') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js', v='20260226-2') }}"></script>
+</body>
+</html>
