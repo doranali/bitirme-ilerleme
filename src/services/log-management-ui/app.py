@@ -71,6 +71,26 @@ app.secret_key = os.environ.get('MANAGEMENT_UI_SECRET_KEY') or os.environ.get('S
 CORS(app)
 configure_flask_security(app)
 
+
+def _request_client_ip() -> str | None:
+    """
+    Gerçek istemci IP: X-Forwarded-For sol eleman (proxy zinciri), yoksa X-Real-IP, yoksa remote_addr.
+    Ham XFF (virgüllü) doğrudan kaydedilirse envanterde yanlış / iç IP görünür.
+    """
+    xff = (request.headers.get('X-Forwarded-For') or '').strip()
+    if xff:
+        part = xff.split(',')[0].strip()
+        if part:
+            return part
+    xr = (request.headers.get('X-Real-IP') or '').strip()
+    if xr:
+        return xr.split(',')[0].strip()
+    try:
+        return request.remote_addr
+    except Exception:
+        return None
+
+
 # Config paths - Use absolute paths from the host mounted volume
 BASE_DIR = Path('/app/config')
 CONFIG_PATHS = {
@@ -90,6 +110,7 @@ AGENT_FLEET_PATH = BASE_DIR / 'agent-fleet'
 AGENT_PROFILES_PATH = AGENT_FLEET_PATH / 'profiles.json'
 AGENT_TOKENS_PATH = AGENT_FLEET_PATH / 'enrollment_tokens.json'
 AGENT_NODES_PATH = AGENT_FLEET_PATH / 'nodes.json'
+AGENT_FLEET_SUPPRESSIONS_PATH = AGENT_FLEET_PATH / 'fleet-suppressions.json'
 
 USERS_PATH = BASE_DIR / 'users.yaml'
 SESSION_TIMEOUT_MINUTES = int(os.environ.get('SESSION_TIMEOUT_MINUTES', '60'))
@@ -304,7 +325,7 @@ def _agent_profile_catalog():
             'type': 'relay',
             'platform': 'linux',
             'transport': 'syslog-to-udp-json',
-            'description': 'Ajan kurulamayan firewall/switch loglarını syslog ile alır ve merkeze dönüştürerek iletir. (Linux üzerinde çalışır.)',
+            'description': 'İsteğe bağlı: Ayrı bir Linux’ta syslog toplayıp merkeze JSON ile iletir. vCenter/firewall doğrudan merkez IP’nin 1514 UDP/TCP portuna da syslog gönderebilir (ekstra makine gerekmez).',
             'defaults': {
                 'relayUdpPort': 1514,
                 'relayTcpPort': 1514,
@@ -370,6 +391,13 @@ def _resolve_service_link_host():
     if normalized:
         return normalized
     return '127.0.0.1'
+
+
+def _agent_trust_insecure_panel_tls() -> bool:
+    """Lab / self-signed panel: .ps1 ve tek satir IWR icin TLS dogrulamasini kapat (yalnizca bilincli .env)."""
+    return os.environ.get('LOG_PLATFORM_INSECURE_TLS_FOR_AGENT_SCRIPTS', '').strip().lower() in (
+        '1', 'true', 'yes', 'on',
+    )
 
 
 def _public_app_base_url() -> str:
@@ -481,6 +509,116 @@ def _find_token_record(raw_token):
     return tokens, -1, None
 
 
+def _merge_agent_fleet_nodes(nodes, tokens):
+    """nodes.json ile enrollment token kayıtlarını tokenId üzerinden birleştirir.
+
+    Bazı kurulumlarda aktivasyon token dosyasına yazılıp nodes.json satırı
+    oluşmazsa (çoklu worker yarışı, eski sürüm, elle dosya oyunu) panel boş kalır;
+    `activatedNode` + activationCount ile eksik satırlar tamamlanır.
+    """
+    out: list = []
+    if isinstance(nodes, list):
+        out = [dict(n) for n in nodes]
+    by_tid = {str(n.get('tokenId')): n for n in out if n.get('tokenId')}
+    if not isinstance(tokens, list):
+        return out
+    for t in tokens:
+        tid = str(t.get('id') or '')
+        if not tid:
+            continue
+        if tid in by_tid:
+            row = by_tid[tid]
+            an = t.get('activatedNode') or {}
+            hn = str(an.get('hostname') or '').strip()
+            if hn and not str(row.get('hostname') or '').strip():
+                row['hostname'] = hn
+            if not row.get('profileId') and t.get('profileId'):
+                row['profileId'] = t.get('profileId')
+            if not row.get('activatedAt') and t.get('activatedAt'):
+                row['activatedAt'] = t.get('activatedAt')
+            if not row.get('lastSeenAt') and t.get('lastSeenAt'):
+                row['lastSeenAt'] = t.get('lastSeenAt')
+            if not row.get('lastSeenIp') and t.get('lastSeenIp'):
+                row['lastSeenIp'] = t.get('lastSeenIp')
+            if (not row.get('metadata')) and isinstance(t.get('metadata'), dict) and t.get('metadata'):
+                row['metadata'] = dict(t.get('metadata') or {})
+            continue
+        ac = int(t.get('activationCount') or 0)
+        if ac < 1:
+            continue
+        if str(t.get('status') or '').lower() != 'active':
+            continue
+        an = t.get('activatedNode') or {}
+        hn = str(an.get('hostname') or '').strip()
+        if not hn:
+            continue
+        entry = {
+            'tokenId': tid,
+            'hostname': hn,
+            'profileId': t.get('profileId'),
+            'activatedAt': t.get('activatedAt'),
+            'lastSeenAt': t.get('lastSeenAt') or t.get('activatedAt'),
+            'lastSeenIp': str(t.get('lastSeenIp') or an.get('ip') or ''),
+            'metadata': dict(t.get('metadata') or {}),
+        }
+        out.append(entry)
+        by_tid[tid] = entry
+    return out
+
+
+def _default_fleet_suppressions_payload():
+    return {'tokenIds': [], 'hostnames': []}
+
+
+def _load_fleet_suppressions_sets():
+    raw = _safe_read_json(AGENT_FLEET_SUPPRESSIONS_PATH, _default_fleet_suppressions_payload())
+    if not isinstance(raw, dict):
+        raw = _default_fleet_suppressions_payload()
+    tid_set = frozenset(
+        str(x or '').strip()
+        for x in (raw.get('tokenIds') or raw.get('token_ids') or [])
+        if str(x or '').strip()
+    )
+    hn_set = frozenset(
+        str(x or '').strip().lower()
+        for x in (raw.get('hostnames') or [])
+        if str(x or '').strip()
+    )
+    return {'tokenIds': tid_set, 'hostnames': hn_set}
+
+
+def _fleet_row_is_suppressed(row, tid_set, hn_set):
+    if not isinstance(row, dict):
+        return False
+    tid = str(row.get('tokenId') or '').strip()
+    if tid and tid in tid_set:
+        return True
+    if not tid:
+        hn = str(row.get('hostname') or '').strip().lower()
+        if hn and hn in hn_set:
+            return True
+    return False
+
+
+def _apply_fleet_suppressions(rows):
+    """Token birleşiminden sonra: panel listelerinde gizlenecek uç satırları çıkarır (kopuk/envanter temizliği)."""
+    if not isinstance(rows, list):
+        return []
+    sup = _load_fleet_suppressions_sets()
+    tid_set = sup['tokenIds']
+    hn_set = sup['hostnames']
+    if not tid_set and not hn_set:
+        return list(rows)
+    return [r for r in rows if isinstance(r, dict) and not _fleet_row_is_suppressed(r, tid_set, hn_set)]
+
+
+def _merged_agent_fleet_nodes_unsuppressed():
+    tokens = _load_tokens()
+    nodes_payload = _safe_read_json(AGENT_NODES_PATH, {'nodes': []})
+    nodes = nodes_payload.get('nodes', []) if isinstance(nodes_payload, dict) else []
+    return _merge_agent_fleet_nodes(nodes, tokens)
+
+
 def _is_token_expired(record):
     try:
         expires_at = datetime.fromisoformat(str(record.get('expiresAt', '')).replace('Z', ''))
@@ -497,6 +635,25 @@ def _effective_enrollment_status(record):
     if _is_token_expired(record):
         return 'expired'
     return st if st else 'unknown'
+
+
+# Syslog relay kurulumunda [INPUT] Parser=syslog-rfc3164 için gerekli (merkez parsers.conf ile aynı mantık).
+_SYSLOG_RELAY_PARSERS_CONF = r"""[PARSER]
+    Name        syslog-rfc3164
+    Format      regex
+    Regex       ^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
+    Time_Key    time
+    Time_Format %b %d %H:%M:%S
+    Time_Keep   On
+
+[PARSER]
+    Name        syslog-rfc5424
+    Format      regex
+    Regex       ^\<(?<pri>[0-9]{1,3})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[^ ]+) (?<msgid>[^ ]+) (?<extradata>(\-|\[[^\]]+\])) (?<message>.+)$
+    Time_Key    time
+    Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+    Time_Keep   On
+"""
 
 
 def _render_linux_agent_script(record, raw_token):
@@ -570,6 +727,46 @@ REPO
 
 install_fluent_bit
 
+maybe_clean_prior_log_platform() {{
+  local prior=false
+  local reasons=()
+  if [[ -f /etc/fluent-bit/fluent-bit.conf ]]; then prior=true; reasons+=("/etc/fluent-bit/fluent-bit.conf"); fi
+  if [[ -f /var/lib/fluent-bit/tail.db ]]; then prior=true; reasons+=("/var/lib/fluent-bit/tail.db"); fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet fluent-bit 2>/dev/null; then
+    prior=true; reasons+=("fluent-bit servisi (aktif)");
+  fi
+  if [[ "$prior" != true ]]; then return 0; fi
+  echo "[UYARI] Bu makinede onceki Fluent Bit / Log Platform ajan izleri:"
+  printf ' - %s\\n' "${{reasons[@]}}"
+  local reply="n"
+  case "${{LOG_PLATFORM_ACCEPT_CLEAN_INSTALL:-}}" in
+    1|yes|YES|Y|y|E|e) reply="y" ;;
+    *)
+      if [[ -r /dev/tty ]]; then read -r -p "Kaldirilip temiz kurulum yapilsin mi? [y/N] " reply < /dev/tty
+      else read -r -p "Kaldirilip temiz kurulum yapilsin mi? [y/N] " reply || true
+      fi
+      ;;
+  esac
+  case "$reply" in y|Y|e|E) ;;
+  *) echo "[ERROR] Kurulum iptal. Onaysiz otomasyon: export LOG_PLATFORM_ACCEPT_CLEAN_INSTALL=1 (dikkat: mevcut yapilandirma silinir)." >&2; exit 10 ;;
+  esac
+  echo "[INFO] Onceki yapilandirma yedekleniyor / temizleniyor..."
+  [[ -f /etc/fluent-bit/fluent-bit.conf ]] && cp /etc/fluent-bit/fluent-bit.conf "/etc/fluent-bit/fluent-bit.conf.preinstall.$(date +%s)" 2>/dev/null || true
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop fluent-bit 2>/dev/null || true
+    systemctl disable fluent-bit 2>/dev/null || true
+  elif command -v rc-service >/dev/null 2>&1; then
+    rc-service fluent-bit stop 2>/dev/null || true
+    rc-update del fluent-bit default 2>/dev/null || true
+  fi
+  pkill -f "[f]luent-bit.*fluent-bit.conf" 2>/dev/null || true
+  sleep 1
+  rm -f /etc/fluent-bit/fluent-bit.conf /var/lib/fluent-bit/tail.db 2>/dev/null || true
+  rm -rf /var/lib/fluent-bit/storage/* 2>/dev/null || true
+}}
+
+maybe_clean_prior_log_platform
+
 mkdir -p /etc/fluent-bit /var/lib/fluent-bit/storage /var/log/fluent-bit
 if [[ -f /etc/fluent-bit/fluent-bit.conf ]]; then
   cp /etc/fluent-bit/fluent-bit.conf /etc/fluent-bit/fluent-bit.conf.bak.$(date +%s)
@@ -639,9 +836,20 @@ else
 fi
 
 HOSTNAME_VALUE=$(hostname -f 2>/dev/null || hostname)
+AGENT_IPV4=""
+if command -v ip >/dev/null 2>&1; then
+  AGENT_IPV4=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{{for(i=1;i<=NF;i++) if($i=="src") {{print $(i+1); exit}}}}')
+fi
+if [[ -z "$AGENT_IPV4" ]] && command -v hostname >/dev/null 2>&1; then
+  AGENT_IPV4=$(hostname -I 2>/dev/null | awk '{{print $1}}')
+fi
+LP_ACT_EXTRA=""
+if [[ "$AGENT_IPV4" =~ ^[0-9]{{1,3}}\\.[0-9]{{1,3}}\\.[0-9]{{1,3}}\\.[0-9]{{1,3}}$ ]]; then
+  LP_ACT_EXTRA=',"agentIpv4":"'"$AGENT_IPV4"'"'
+fi
 curl -fsS -m 5 -X POST "$MANAGEMENT_API/api/agent/activate" \
   -H "Content-Type: application/json" \
-  -d "{{\"token\":\"$ENROLL_TOKEN\",\"hostname\":\"$HOSTNAME_VALUE\",\"profile\":\"$PROFILE_ID\"}}" >/dev/null 2>&1 || true
+  -d "{{\"token\":\"$ENROLL_TOKEN\",\"hostname\":\"$HOSTNAME_VALUE\",\"profile\":\"$PROFILE_ID\"$LP_ACT_EXTRA}}" >/dev/null 2>&1 || true
 
 echo "[OK] Fluent Bit agent kuruldu. Loglar: $INGEST_HOST:$INGEST_PORT"
 echo "[INFO] Panel: $MANAGEMENT_API | Health: http://127.0.0.1:2021/api/v1/health"
@@ -684,12 +892,44 @@ fi
 curl -fsSL "$MANAGEMENT_API/api/agent/install/$ENROLL_TOKEN.sh?bootstrap=1" -o /tmp/fluent-bit-bootstrap.sh
 bash /tmp/fluent-bit-bootstrap.sh --relay-only
 
+maybe_clean_prior_relay() {{
+  local prior=false
+  if [[ -f /etc/fluent-bit/fluent-bit.conf ]]; then prior=true; fi
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet fluent-bit 2>/dev/null; then prior=true; fi
+  if [[ "$prior" != true ]]; then return 0; fi
+  echo "[UYARI] /etc/fluent-bit/fluent-bit.conf veya calisan fluent-bit var (onceki kurulum / relay)."
+  local reply="n"
+  case "${{LOG_PLATFORM_ACCEPT_CLEAN_INSTALL:-}}" in
+    1|yes|YES|Y|y|E|e) reply="y" ;;
+    *)
+      if [[ -r /dev/tty ]]; then read -r -p "Uzerine temiz relay kurulumu yapilsin mi? [y/N] " reply < /dev/tty
+      else read -r -p "Uzerine temiz relay kurulumu yapilsin mi? [y/N] " reply || true
+      fi
+      ;;
+  esac
+  case "$reply" in y|Y|e|E) ;;
+  *) echo "[ERROR] Kurulum iptal. Onaysiz: export LOG_PLATFORM_ACCEPT_CLEAN_INSTALL=1" >&2; exit 10 ;;
+  esac
+  [[ -f /etc/fluent-bit/fluent-bit.conf ]] && cp /etc/fluent-bit/fluent-bit.conf "/etc/fluent-bit/fluent-bit.conf.preinstall.$(date +%s)" 2>/dev/null || true
+  if command -v systemctl >/dev/null 2>&1; then systemctl stop fluent-bit 2>/dev/null || true; systemctl disable fluent-bit 2>/dev/null || true; fi
+  if command -v rc-service >/dev/null 2>&1; then rc-service fluent-bit stop 2>/dev/null || true; fi
+  pkill -f "[f]luent-bit.*fluent-bit.conf" 2>/dev/null || true
+  sleep 1
+  rm -f /etc/fluent-bit/fluent-bit.conf 2>/dev/null || true
+}}
+
+maybe_clean_prior_relay
+
 mkdir -p /etc/fluent-bit /var/lib/fluent-bit/storage
+cat > /etc/fluent-bit/parsers.conf <<'PARSERS_EOF'
+{_SYSLOG_RELAY_PARSERS_CONF}
+PARSERS_EOF
 cat > /etc/fluent-bit/fluent-bit.conf <<CONF
 [SERVICE]
     Flush                   1
     Daemon                  Off
     Log_Level               info
+    Parsers_File            /etc/fluent-bit/parsers.conf
     HTTP_Server             On
     HTTP_Listen             0.0.0.0
     HTTP_Port               2021
@@ -773,12 +1013,21 @@ def _render_windows_agent_ps1(record, raw_token):
 
     # token_urlsafe: no single quotes; still escape for safety
     t_lit = _ps_sq(raw_token)
+    tls_insecure_ps = ''
+    if _agent_trust_insecure_panel_tls():
+        tls_insecure_ps = (
+            "# UYARI: LOG_PLATFORM_INSECURE_TLS_FOR_AGENT_SCRIPTS=1 — tum HTTPS baglantilari guvenilir sayilir (yalnizca lab).\n"
+            "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n"
+            "\n"
+        )
     return (
         "# Log Platform - Fluent Bit Windows agent (enrollment)\n"
         "#Requires -Version 5.1\n"
+        "# Onceki kurulum sorusunu atlamak: $env:LOG_PLATFORM_ACCEPT_CLEAN_INSTALL='1' (veya setx / sistem ortami).\n"
         "$ErrorActionPreference = 'Stop'\n"
         "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n"
-        f"$LpToken = '{t_lit}'\n"
+        + tls_insecure_ps
+        + f"$LpToken = '{t_lit}'\n"
         f"$LpIngestHost = '{_ps_sq(ingest_host)}'\n"
         f"$LpIngestPort = {ingest_port}\n"
         f"$LpCompany = '{_ps_sq(company_id)}'\n"
@@ -800,6 +1049,45 @@ def _render_windows_agent_ps1(record, raw_token):
         "$Cache = Join-Path $env:TEMP ('LogPlatformFbZip_' + [Guid]::NewGuid().ToString('n'))\n"
         "# Program Files icinde bosluk Windows servis binPath kayitlarini bozabiliyor; surucu kokune kur.\n"
         "$InstallRoot = Join-Path $env:SystemDrive 'LogPlatformFluentBit'\n"
+        "$LpPrevFound = $false\n"
+        "$LpPrevList = New-Object System.Collections.Generic.List[string]\n"
+        "if (Test-Path (Join-Path $InstallRoot 'bin\\fluent-bit.exe')) { $LpPrevFound = $true; [void]$LpPrevList.Add('Kurulum: ' + $InstallRoot) }\n"
+        "if (Test-Path (Join-Path $Data 'fluent-bit.conf')) { $LpPrevFound = $true; [void]$LpPrevList.Add('Yapilandirma: ' + (Join-Path $Data 'fluent-bit.conf')) }\n"
+        "$LpOldSvc = Get-Service -Name $LpServiceName -ErrorAction SilentlyContinue\n"
+        "sc.exe query $LpServiceName 2>$null | Out-Null\n"
+        "$LpScHas = ($LASTEXITCODE -eq 0)\n"
+        "if ($LpOldSvc -or $LpScHas) { $LpPrevFound = $true; [void]$LpPrevList.Add('Servis: ' + $LpServiceName) }\n"
+        "# schtasks stderr + $ErrorActionPreference Stop = sonlandirici hata; cmd ile sadece cikis kodu.\n"
+        "cmd.exe /c 'schtasks /Query /TN \"LogPlatformAgentHeartbeat\" >nul 2>&1' | Out-Null\n"
+        "if ($LASTEXITCODE -eq 0) { $LpPrevFound = $true; [void]$LpPrevList.Add('Zamanlanmis gorev: LogPlatformAgentHeartbeat') }\n"
+        "if ($LpPrevFound) {\n"
+        "  Write-Host '[UYARI] Onceki Log Platform Windows ajan izleri:'\n"
+        "  foreach ($x in $LpPrevList) { Write-Host (' - ' + $x) }\n"
+        "  $LpAuto = $env:LOG_PLATFORM_ACCEPT_CLEAN_INSTALL\n"
+        "  if ($LpAuto -eq '1' -or $LpAuto -eq 'yes' -or $LpAuto -eq 'Y' -or $LpAuto -eq 'E' -or $LpAuto -eq 'e') {\n"
+        "    $LpAns = 'E'\n"
+        "  } else {\n"
+        "    $LpAns = Read-Host 'Bunlari kaldirarak TEMIZ kurulum yapilsin mi? (Evet=E / Hayir=H) [varsayilan: H]'\n"
+        "  }\n"
+        "  if ($LpAns -ne 'E' -and $LpAns -ne 'e' -and $LpAns -ne 'Y' -and $LpAns -ne 'y') {\n"
+        "    Write-Error 'Kurulum iptal. Kaldirma icin uninstall .ps1; onaysiz temiz kurulum: LOG_PLATFORM_ACCEPT_CLEAN_INSTALL=1'\n"
+        "    exit 10\n"
+        "  }\n"
+        "  Write-Host '[INFO] Onceki kurulum kaldiriliyor...'\n"
+        "  Stop-Service -Name $LpServiceName -Force -ErrorAction SilentlyContinue\n"
+        "  Start-Sleep -Seconds 2\n"
+        "  sc.exe delete $LpServiceName | Out-Null\n"
+        "  $LpT0 = Get-Date\n"
+        "  while (((Get-Date) - $LpT0).TotalSeconds -lt 45) {\n"
+        "    $LpQr = sc.exe query $LpServiceName 2>&1 | Out-String\n"
+        "    if ($LpQr -match '1060' -or $LpQr -match 'DOES NOT EXIST' -or $LpQr -match 'specified service does not exist') { break }\n"
+        "    Start-Sleep -Milliseconds 400\n"
+        "  }\n"
+        "  cmd.exe /c 'schtasks /Delete /TN \"LogPlatformAgentHeartbeat\" /F >nul 2>&1' | Out-Null\n"
+        "  Remove-Item -LiteralPath $InstallRoot -Recurse -Force -ErrorAction SilentlyContinue\n"
+        "  Remove-Item -LiteralPath $Data -Recurse -Force -ErrorAction SilentlyContinue\n"
+        "  Start-Sleep -Seconds 2\n"
+        "}\n"
         "New-Item -ItemType Directory -Path $Data -Force | Out-Null\n"
         "New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null\n"
         "New-Item -ItemType Directory -Path $Cache -Force | Out-Null\n"
@@ -878,15 +1166,7 @@ def _render_windows_agent_ps1(record, raw_token):
         "| ForEach-Object { Copy-Item $_.FullName (Join-Path $targetBin $_.Name) -Force }\n"
         "\n"
         "$exePath = Join-Path $targetBin 'fluent-bit.exe'\n"
-        "# sc.exe: PowerShell & sc.exe a b c ile birlestirme argv'yi bozup USAGE basmasina yol acabiliyor; @args splat kullan.\n"
-        "# Gorunen ad bosluksuz (Services listesinde); aciklama asagida sc description ile.\n"
-        "$scCreateArgs = @(\n"
-        "  'create',\n"
-        "  $LpServiceName,\n"
-        "  ('binPath= \"{0}\" -c \"{1}\"' -f $exePath, $confPath),\n"
-        "  'DisplayName= LogPlatformFluentBit',\n"
-        "  'start= auto'\n"
-        ")\n"
+        "# Servis kaydi: sc.exe create yerine New-Service (binPath tirnak/argv sorunlarinda daha tutarli).\n"
         "$svc = Get-Service -Name $LpServiceName -ErrorAction SilentlyContinue\n"
         "if ($svc) {\n"
         "  Stop-Service -Name $LpServiceName -Force -ErrorAction SilentlyContinue\n"
@@ -900,32 +1180,31 @@ def _render_windows_agent_ps1(record, raw_token):
         "  }\n"
         "  Start-Sleep -Seconds 2\n"
         "}\n"
-        "$scOut = & sc.exe @scCreateArgs 2>&1\n"
-        "if ($LASTEXITCODE -ne 0) {\n"
-        "  $so = \"$scOut\"\n"
-        "  if ($so -match '1073' -or $so -match 'already exists' -or $so -match 'zaten' -or $so -match 'already been run') {\n"
-        "    Write-Warning '[INFO] Servis kaydi mevcut; silinip tekrar deneniyor...'\n"
-        "    sc.exe delete $LpServiceName | Out-Null\n"
-        "    Start-Sleep -Seconds 4\n"
-        "    $scOut = & sc.exe @scCreateArgs 2>&1\n"
-        "  }\n"
-        "}\n"
-        "if ($LASTEXITCODE -ne 0) {\n"
-        "  Write-Host $scOut\n"
-        "  Write-Error 'sc.exe create basarisiz (servis adi veya onceki kalinti). Gerekirse sunucuyu yeniden baslatin.'\n"
+        "$binForSvc = ('\"' + $exePath + '\" -c \"' + $confPath + '\"')\n"
+        "try {\n"
+        "  New-Service -Name $LpServiceName -BinaryPathName $binForSvc "
+        "-DisplayName 'Log Platform Fluent Bit' -StartupType Automatic -ErrorAction Stop | Out-Null\n"
+        "} catch {\n"
+        "  Write-Host $_.Exception.Message\n"
+        "  Write-Error 'Windows servisi olusturulamadi (yetki veya onceki kalinti). sc.exe qc ile kontrol edin; gerekirse yeniden baslatin.'\n"
         "  exit 4\n"
         "}\n"
-        'sc.exe description $LpServiceName "Log Platform Fluent Bit agent" | Out-Null\n'
-        "sc.exe failure $LpServiceName reset= 86400 "
-        "actions= restart/60000/restart/120000/restart/300000 | Out-Null\n"
-        "sc.exe failureflag $LpServiceName 1 | Out-Null\n"
+        "# sc.exe: '=' sonrasi bosluk zorunlu; PowerShell tek arguman olarak dizi kullan.\n"
+        "& sc.exe @('description', $LpServiceName, 'Log Platform Fluent Bit agent') | Out-Null\n"
+        "& sc.exe @('failure', $LpServiceName, 'reset= 86400', "
+        "'actions= restart/60000/restart/120000/restart/300000') | Out-Null\n"
+        "& sc.exe @('failureflag', $LpServiceName, '1') | Out-Null\n"
         + (
-            "& sc.exe config $LpServiceName 'depend= Tcpip' | Out-Null\n"
+            "& sc.exe @('config', $LpServiceName, 'depend= Tcpip') | Out-Null\n"
             if win_depend_tcp
             else ''
         )
         + (
-            "& sc.exe config $LpServiceName start= delayed-auto | Out-Null\n"
+            "# Gecikmeli otostart: sc config start= delayed-auto yerine SCM ile uyumlu kayit.\n"
+            "$__rk = Join-Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services' $LpServiceName\n"
+            "if (Test-Path -LiteralPath $__rk) {\n"
+            "  New-ItemProperty -LiteralPath $__rk -Name 'DelayedAutostart' -PropertyType DWord -Value 1 -Force | Out-Null\n"
+            "}\n"
             if win_delayed
             else ''
         )
@@ -965,8 +1244,24 @@ def _render_windows_agent_ps1(record, raw_token):
         "  Write-Error 'Fluent Bit Windows servisi baslatilamadi.'\n"
         "}\n"
         "\n"
+        "$LpAgentIp = $null\n"
         "try {\n"
-        "  $body = @{ token = $LpToken; hostname = $env:COMPUTERNAME; profile = $LpProfile } | ConvertTo-Json\n"
+        "  $xa = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.IPAddress -and $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | "
+        "Sort-Object InterfaceMetric)\n"
+        "  foreach ($z in $xa) { $LpAgentIp = $z.IPAddress; break }\n"
+        "} catch {}\n"
+        "if (-not $LpAgentIp) {\n"
+        "  try {\n"
+        "    $LpAgentIp = (Get-NetIPConfiguration -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1).IPv4Address.IPAddress\n"
+        "  } catch {}\n"
+        "}\n"
+        "\n"
+        "try {\n"
+        "  $act = @{ token = $LpToken; hostname = $env:COMPUTERNAME; profile = $LpProfile }\n"
+        "  if ($LpAgentIp) { $act['agentIpv4'] = $LpAgentIp }\n"
+        "  $body = $act | ConvertTo-Json\n"
         "  Invoke-RestMethod -Uri ($LpApi.TrimEnd('/') + '/api/agent/activate') -Method Post "
         "-ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec 15 | Out-Null\n"
         "  Write-Host '[OK] Merkeze aktivasyon gonderildi.'\n"
@@ -978,26 +1273,40 @@ def _render_windows_agent_ps1(record, raw_token):
         "Set-Content -LiteralPath $LpHbScript -Encoding UTF8 -Value @'\n"
         "$ErrorActionPreference = 'SilentlyContinue'\n"
         "try {\n"
-        f"  $body = @{{ token = '{t_lit}'; hostname = $env:COMPUTERNAME; status = 'ok' }} | ConvertTo-Json\n"
         f"  $api = '{_ps_sq(management_api)}'\n"
+        "  $hbIp = $null\n"
+        "  try {\n"
+        "    $xa = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.IPAddress -and $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | "
+        "Sort-Object InterfaceMetric)\n"
+        "    foreach ($z in $xa) { $hbIp = $z.IPAddress; break }\n"
+        "  } catch {}\n"
+        "  if (-not $hbIp) {\n"
+        "    try {\n"
+        "      $hbIp = (Get-NetIPConfiguration -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1).IPv4Address.IPAddress\n"
+        "    } catch {}\n"
+        "  }\n"
+        f"  $hb = @{{ token = '{t_lit}'; hostname = $env:COMPUTERNAME; status = 'ok' }}\n"
+        "  if ($hbIp) { $hb['agentIpv4'] = $hbIp }\n"
+        "  $body = $hb | ConvertTo-Json\n"
         "  Invoke-RestMethod -Uri ($api.TrimEnd('/') + '/api/agent/heartbeat') -Method Post "
         "-Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 25 | Out-Null\n"
         "} catch {}\n"
         "'@\n"
-        "Unregister-ScheduledTask -TaskName 'LogPlatformAgentHeartbeat' -Confirm:$false "
-        "-ErrorAction SilentlyContinue | Out-Null\n"
-        "$argHb = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' + $LpHbScript + '\"'\n"
-        "$actionHb = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argHb\n"
-        "$triggerHb = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval "
-        "(New-TimeSpan -Minutes 3) -RepetitionDuration ([TimeSpan]::MaxValue)\n"
-        "$principalHb = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\\SYSTEM' "
-        "-LogonType ServiceAccount -RunLevel Highest\n"
-        "try {\n"
-        "  Register-ScheduledTask -TaskName 'LogPlatformAgentHeartbeat' -Action $actionHb "
-        "-Trigger $triggerHb -Principal $principalHb -Force | Out-Null\n"
-        "  Write-Host '[OK] Heartbeat gorevi: her 3 dk (LogPlatformAgentHeartbeat).'\n"
-        "} catch {\n"
-        "  Write-Warning ('Heartbeat gorevi eklenemedi: ' + $_.Exception.Message)\n"
+        "$_lpEaHb = $ErrorActionPreference\n"
+        "$ErrorActionPreference = 'SilentlyContinue'\n"
+        "cmd.exe /c 'schtasks /Delete /TN \"LogPlatformAgentHeartbeat\" /F >nul 2>&1' | Out-Null\n"
+        "$trArg = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' "
+        "+ $LpHbScript + '\"')\n"
+        "# schtasks: Task Scheduler XML + TimeSpan::MaxValue bazi surumlerde hata; schtasks.exe argv daha tutarli.\n"
+        "$st = schtasks.exe @('/Create','/TN','LogPlatformAgentHeartbeat','/TR',$trArg,'/SC','MINUTE','/MO','3',"
+        "'/RU','SYSTEM','/RL','HIGHEST','/F') 2>&1 | Out-String\n"
+        "$ErrorActionPreference = $_lpEaHb\n"
+        "if ($LASTEXITCODE -ne 0) {\n"
+        "  Write-Warning ('Heartbeat gorevi (schtasks) eklenemedi: ' + ($st.Trim()))\n"
+        "} else {\n"
+        "  Write-Host '[OK] Heartbeat gorevi: her 3 dk (LogPlatformAgentHeartbeat, schtasks).'\n"
         "}\n"
         "try { & $LpHbScript } catch {}\n"
         "\n"
@@ -1022,11 +1331,21 @@ def _render_windows_uninstall_ps1(raw_token: str) -> str:
         return str(value).replace("'", "''")
 
     t_lit = _ps_sq(raw_token)
+    tls_un = (
+        "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n"
+    )
+    if _agent_trust_insecure_panel_tls():
+        tls_un += (
+            "# UYARI: LOG_PLATFORM_INSECURE_TLS_FOR_AGENT_SCRIPTS=1 (lab).\n"
+            "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n"
+        )
+    tls_un += "\n"
     return (
         "# Log Platform - Windows agent kaldirma (kurulumda kullandiginiz enrollment token ile)\n"
         "#Requires -Version 5.1\n"
         "$ErrorActionPreference = 'Stop'\n"
-        f"$LpToken = '{t_lit}'\n"
+        + tls_un
+        + f"$LpToken = '{t_lit}'\n"
         f"$LpApi = '{_ps_sq(management_api)}'\n"
         f"$LpServiceName = '{_ps_sq(service_name)}'\n"
         "\n"
@@ -1040,8 +1359,7 @@ def _render_windows_uninstall_ps1(raw_token: str) -> str:
         "Stop-Service -Name $LpServiceName -Force -ErrorAction SilentlyContinue\n"
         "Start-Sleep -Seconds 2\n"
         "sc.exe delete $LpServiceName | Out-Null\n"
-        "Unregister-ScheduledTask -TaskName 'LogPlatformAgentHeartbeat' -Confirm:$false "
-        "-ErrorAction SilentlyContinue | Out-Null\n"
+        "cmd.exe /c 'schtasks /Delete /TN \"LogPlatformAgentHeartbeat\" /F >nul 2>&1' | Out-Null\n"
         "$dataDir = Join-Path $env:ProgramData 'LogPlatformFluentBit'\n"
         "$installDir = Join-Path $env:SystemDrive 'LogPlatformFluentBit'\n"
         "if (Test-Path -LiteralPath $dataDir) {\n"
@@ -1156,7 +1474,7 @@ def audit_event(action, status='success', details=None):
             'action': action,
             'status': status,
             'details': details or {},
-            'ip': request.headers.get('X-Forwarded-For', request.remote_addr)
+            'ip': _request_client_ip()
         }
         with open(AUDIT_LOG_PATH, 'a') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
@@ -2881,9 +3199,39 @@ def collect_fluent_bit_metrics():
             except Exception:
                 return None
 
-        metrics['inputRecords'] = pick(r'fluentbit_input_records_total\{[^}]*name="udp\.0"[^}]*\}\s+([0-9.eE+-]+)')
-        metrics['outputProcessed'] = pick(r'fluentbit_output_proc_records_total\{[^}]*name="kafka\.1"[^}]*\}\s+([0-9.eE+-]+)')
-        metrics['outputErrors'] = pick(r'fluentbit_output_errors_total\{[^}]*\}\s+([0-9.eE+-]+)')
+        def sum_re(pattern: str) -> int | None:
+            total = 0
+            found = False
+            for m in re.finditer(pattern, text):
+                found = True
+                try:
+                    total += int(float(m.group(1)))
+                except Exception:
+                    continue
+            return total if found else None
+
+        # UDP JSON (5151/5152/5153) + doğrudan syslog (1514 → name syslog.*) — Genel Bakış EPS trendi ikisini de saysın.
+        udp_in = sum_re(
+            r'fluentbit_input_records_total\{[^}]*name="udp\.[^"]+"[^}]*\}\s+([0-9.eE+-]+)'
+        )
+        if udp_in is None:
+            udp_in = pick(r'fluentbit_input_records_total\{[^}]*name="udp\.0"[^}]*\}\s+([0-9.eE+-]+)')
+        syslog_in = sum_re(
+            r'fluentbit_input_records_total\{[^}]*name="syslog\.[^"]+"[^}]*\}\s+([0-9.eE+-]+)'
+        )
+        if udp_in is None and syslog_in is None:
+            metrics['inputRecords'] = None
+        else:
+            metrics['inputRecords'] = int(udp_in or 0) + int(syslog_in or 0)
+        # Birden fazla Kafka çıkışı; hepsinin işlenen kayıtlarını topla.
+        metrics['outputProcessed'] = sum_re(
+            r'fluentbit_output_proc_records_total\{[^}]*name="kafka\.[^"]+"[^}]*\}\s+([0-9.eE+-]+)'
+        )
+        if metrics['outputProcessed'] is None:
+            metrics['outputProcessed'] = pick(r'fluentbit_output_proc_records_total\{[^}]*name="kafka\.1"[^}]*\}\s+([0-9.eE+-]+)')
+        metrics['outputErrors'] = sum_re(r'fluentbit_output_errors_total\{[^}]*\}\s+([0-9.eE+-]+)')
+        if metrics['outputErrors'] is None:
+            metrics['outputErrors'] = pick(r'fluentbit_output_errors_total\{[^}]*\}\s+([0-9.eE+-]+)')
         return metrics
     except Exception as e:
         metrics['note'] = str(e)
@@ -6021,10 +6369,18 @@ def _build_settings_definitions():
         },
         {
             'key': 'TUBITAK_TSA_URL', 'label': 'TÜBİTAK TSA URL', 'group': '5651 Uyum', 'type': 'text', 'requiredRole': 'admin',
-            'description': 'TSA zaman damgası endpoint adresi.', 'default': 'https://kamusm.bilgem.tubitak.gov.tr/tsa',
-            'pattern': r'^https:\/\/[^\s]+$', 'placeholder': 'https://.../tsa',
+            'description': 'TSA endpoint (üretim). İstemci uyumluluğu için Kamu SM test TSA ve Zamane: docs/5651_UYUMLULUK.md; staging’de test URL kullanın.',
+            'default': 'https://kamusm.bilgem.tubitak.gov.tr/tsa',
+            'pattern': r'^https?:\/\/[^\s]+$', 'placeholder': 'https://.../tsa',
             'visibleWhen': {'key': 'SIGNER_TYPE', 'equals': 'TUBITAK'},
             'affectedServices': ['signing-engine'], 'restartRequired': False, 'riskLevel': 'medium'
+        },
+        {
+            'key': 'TUBITAK_TLS_INSECURE', 'label': 'TSA TLS doğrulamasını atla (curl -k)', 'group': '5651 Uyum', 'type': 'select', 'requiredRole': 'admin',
+            'description': 'Yalnızca Kamu SM test TSA / özel CA. Üretimde kapalı (0) tutun.',
+            'default': '0', 'options': ['0', '1'],
+            'visibleWhen': {'key': 'SIGNER_TYPE', 'equals': 'TUBITAK'},
+            'affectedServices': ['signing-engine'], 'restartRequired': False, 'riskLevel': 'high'
         },
         {
             'key': 'SIGNING_ENGINE_SCHEDULE_ENABLED', 'label': 'İmza Motoru Zamanlayıcı', 'group': '5651 Uyum', 'type': 'select', 'requiredRole': 'operator',
@@ -6115,8 +6471,10 @@ def _validate_settings_dependencies(candidate_env):
     if signer_type == 'SIMULATED':
         return 'SIGNER_TYPE=SIMULATED artık desteklenmiyor; OPEN_SOURCE veya TUBITAK seçin'
     tsa_url = str(candidate_env.get('TUBITAK_TSA_URL', '')).strip()
-    if signer_type == 'TUBITAK' and not tsa_url.startswith('https://'):
-        return 'SIGNER_TYPE=TUBITAK iken TUBITAK_TSA_URL https:// ile başlamalı'
+    if signer_type == 'TUBITAK' and tsa_url and not (
+        tsa_url.startswith('https://') or tsa_url.startswith('http://')
+    ):
+        return 'SIGNER_TYPE=TUBITAK iken TUBITAK_TSA_URL http:// veya https:// ile başlamalı'
 
     archive_destination = str(candidate_env.get('ARCHIVE_DESTINATION', 'local')).strip().lower()
     hot_days_raw = str(candidate_env.get('LOG_HOT_RETENTION_DAYS', '90')).strip()
@@ -6308,7 +6666,8 @@ def index():
         'dashboard.html',
         services=services,
         current_user=session.get('username'),
-        current_role=session.get('role')
+        current_role=session.get('role'),
+        agent_install_trust_insecure_tls=_agent_trust_insecure_panel_tls(),
     )
 
 
@@ -6969,7 +7328,7 @@ def _graylog_api_post(path: str, json=None, **kwargs):
 
 
 def _ingest_pipeline_health_snapshot() -> dict:
-    """Edge ingest: Fluent Bit (UDP giriş) + Graylog API — panelden güvenilir hat özeti."""
+    """Edge ingest: Fluent Bit (UDP 5151 JSON + 1514 syslog) + Graylog API — panel özeti."""
     fb_status = None
     fb_health = None
     fb_http_ok = False
@@ -7017,6 +7376,8 @@ def _ingest_pipeline_health_snapshot() -> dict:
             'detail': gl_detail,
         },
         'ingestUdpPort': 5151,
+        'syslogUdpPort': 1514,
+        'syslogTcpPort': 1514,
         'checkedAt': datetime.utcnow().isoformat() + 'Z',
     }
 
@@ -7229,6 +7590,7 @@ def observability_metrics():
         'diskUsagePercent': disk_pct,
         'qcStreamCount1h': qc_count,
         'fluentBitAvailable': fb.get('available', False),
+        'fluentBitMetricsNote': (fb.get('note') or '').strip() or None,
         'diskProfile': disk_profile,
     })
 
@@ -7715,10 +8077,22 @@ def agent_default_ingest():
     host = _normalize_host(request.host.split(':')[0] if request.host else '') or _normalize_host(
         os.environ.get('LOG_PLATFORM_PUBLIC_HOST', '')
     ) or '127.0.0.1'
+    op_tz = (os.environ.get('TZ') or 'Europe/Istanbul').strip() or 'Europe/Istanbul'
     return jsonify({
         'ingestHost': host,
         'ingestPort': 5151,
+        'syslogUdpPort': 1514,
+        'syslogTcpPort': 1514,
         'installBaseUrl': _public_app_base_url(),
+        'operationsTimezone': op_tz,
+        'ingestHints': {
+            'message': 'İnsan okunabilir ana metin; Windows olayında Message merkezde message olarak eşlenir.',
+            'host': 'Kaynak hostname; Windows’ta ComputerName ile host/source doldurulur.',
+            'time': 'Mümkünse olay zamanı için Unix epoch alanı (ör. winlog date); Graylog GELF ile saklanır, arayüz '
+            + op_tz + ' gösterir.',
+            'syslog': 'Fluent Bit ajanı: UDP 5151 JSON. vCenter / firewall syslog: aynı merkez adresinde UDP veya TCP '
+            + '1514 (şifresiz; TLS bu girişte yok). İsteğe bağlı syslog-relay profili ayrı bir Linux toplayıcı içindir.',
+        },
     })
 
 
@@ -7781,6 +8155,7 @@ def agent_enrollment_token_create():
         'installUrlPs1': install_url_ps1 if profile_id == 'windows-agent-v1' else None,
         'uninstallUrlPs1': uninstall_url_ps1,
         'installKind': 'powershell' if profile_id == 'windows-agent-v1' else 'bash',
+        'trustInsecurePanelTls': _agent_trust_insecure_panel_tls(),
         'record': response_record
     })
 
@@ -7836,7 +8211,7 @@ def agent_install_script(raw_token):
 
     record['scriptDownloads'] = int(record.get('scriptDownloads') or 0) + 1
     record['lastSeenAt'] = _utc_now_iso()
-    record['lastSeenIp'] = request.headers.get('X-Forwarded-For', request.remote_addr)
+    record['lastSeenIp'] = _request_client_ip()
     tokens[idx] = record
     _save_tokens(tokens)
 
@@ -7867,7 +8242,7 @@ def agent_install_script_ps1(raw_token):
 
     record['scriptDownloads'] = int(record.get('scriptDownloads') or 0) + 1
     record['lastSeenAt'] = _utc_now_iso()
-    record['lastSeenIp'] = request.headers.get('X-Forwarded-For', request.remote_addr)
+    record['lastSeenIp'] = _request_client_ip()
     tokens[idx] = record
     _save_tokens(tokens)
 
@@ -7897,7 +8272,7 @@ def agent_uninstall_script_ps1(raw_token):
 
     record['uninstallScriptDownloads'] = int(record.get('uninstallScriptDownloads') or 0) + 1
     record['lastUninstallScriptAt'] = _utc_now_iso()
-    record['lastSeenIp'] = request.headers.get('X-Forwarded-For', request.remote_addr)
+    record['lastSeenIp'] = _request_client_ip()
     tokens[idx] = record
     _save_tokens(tokens)
 
@@ -7938,7 +8313,7 @@ def agent_activate():
     record['status'] = 'active'
     record['activatedAt'] = _utc_now_iso()
     record['lastSeenAt'] = record['activatedAt']
-    record['lastSeenIp'] = request.headers.get('X-Forwarded-For', request.remote_addr)
+    record['lastSeenIp'] = _preferred_agent_ip_from_payload(payload) or _request_client_ip()
     record['activatedNode'] = {
         'hostname': hostname,
         'ip': record['lastSeenIp'],
@@ -7960,6 +8335,12 @@ def agent_activate():
         'metadata': record.get('metadata', {})
     })
     _safe_write_json(AGENT_NODES_PATH, {'nodes': nodes})
+
+    audit_event('agent.edge_activate', 'success', {
+        'tokenId': str(record.get('id') or ''),
+        'hostname': hostname,
+        'profileId': record.get('profileId'),
+    })
 
     return jsonify({'message': 'agent activated'})
 
@@ -7989,9 +8370,23 @@ def agent_uninstall_notify():
             node['uninstalledAt'] = _utc_now_iso()
             node['uninstallReason'] = reason
             node['lastSeenAt'] = _utc_now_iso()
-            node['lastSeenIp'] = request.headers.get('X-Forwarded-For', request.remote_addr)
+            node['lastSeenIp'] = _request_client_ip()
             matched = True
             break
+    if not matched:
+        an = record.get('activatedNode') or {}
+        nodes.append({
+            'tokenId': token_id,
+            'hostname': hostname or str(an.get('hostname') or 'unknown-host'),
+            'profileId': record.get('profileId'),
+            'agentLifecycle': 'uninstalled',
+            'uninstalledAt': _utc_now_iso(),
+            'uninstallReason': reason,
+            'lastSeenAt': _utc_now_iso(),
+            'lastSeenIp': _request_client_ip(),
+            'metadata': record.get('metadata', {}),
+        })
+        matched = True
     if matched:
         _safe_write_json(AGENT_NODES_PATH, {'nodes': nodes})
 
@@ -8023,7 +8418,7 @@ def agent_heartbeat():
         return jsonify({'error': f"token {record.get('status')}"}), 403
 
     record['lastSeenAt'] = _utc_now_iso()
-    record['lastSeenIp'] = request.headers.get('X-Forwarded-For', request.remote_addr)
+    record['lastSeenIp'] = _preferred_agent_ip_from_payload(payload) or _request_client_ip()
     record['lastHeartbeatStatus'] = status
     tokens[idx] = record
     _save_tokens(tokens)
@@ -8054,14 +8449,237 @@ def agent_heartbeat():
     return jsonify({'message': 'heartbeat accepted'})
 
 
+def _graylog_parse_search_messages_datarows(data: dict):
+    """POST /search/messages yanıtından alan adı + satır listesi üret."""
+    if not isinstance(data, dict):
+        return [], []
+    schema = data.get('schema') or []
+    field_names = []
+    for col in schema:
+        if col.get('column_type') == 'field' and col.get('field'):
+            field_names.append(col['field'])
+    rows = data.get('datarows') or []
+    if not isinstance(rows, list):
+        rows = []
+    return field_names, rows
+
+
+def _collect_syslog_senders_from_graylog(range_sec: int = 604800, sample_size: int = 400):
+    """Merkez syslog (Fluent Bit log_type:network) için Graylog'tan source/host ve uzak IP özetleri.
+
+    `senders`: Graylog `source` (çoğu kurulumda syslog APP-NAME / servis adı) veya `host` —
+    tek bir fiziksel cihazdan (ör. vCenter) onlarca farklı servis satırı gelmesi normaldir.
+    `remoteSenders`: örnek içinde görülen transport IP dağılımı (öncelik syslog_sender_ip).
+    `emitters`: transport IP başına hiyerarşi (panelde vCenter vb. tıklanabilir özet).
+    """
+    out: dict = {
+        'senders': [],
+        'remoteSenders': [],
+        'emitters': [],
+        'sampleRows': 0,
+        'error': None,
+        'query': 'log_type:network',
+    }
+    rng = max(60, min(int(range_sec), 2592000))
+    sz = max(50, min(int(sample_size), 500))
+    try:
+        payload = {
+            'query': 'log_type:network',
+            'timerange': {'type': 'relative', 'range': rng},
+            'size': sz,
+            'fields': [
+                'source',
+                'host',
+                'facility',
+                'message',
+                'syslog_sender_ip',
+                'gl2_remote_ip',
+            ],
+        }
+        r = _graylog_api_post('/search/messages', json=payload, timeout=35)
+        if r.status_code != 200:
+            out['error'] = f'graylog_http_{r.status_code}'
+            return out
+        data = r.json() if r.content else {}
+        field_names, datarows = _graylog_parse_search_messages_datarows(data)
+        if not field_names:
+            out['error'] = 'graylog_empty_schema'
+            return out
+        idx_source = field_names.index('source') if 'source' in field_names else -1
+        idx_host = field_names.index('host') if 'host' in field_names else -1
+        idx_ssip = field_names.index('syslog_sender_ip') if 'syslog_sender_ip' in field_names else -1
+        idx_gr = field_names.index('gl2_remote_ip') if 'gl2_remote_ip' in field_names else -1
+        by_lower: dict[str, dict] = {}
+        by_ip: dict[str, dict] = {}
+        emit_raw: dict[str, dict] = {}
+
+        def _row_ip_val(row: list, idx: int) -> str:
+            if idx < 0 or idx >= len(row) or row[idx] is None:
+                return ''
+            ip = str(row[idx]).strip()
+            if not ip or ip in ('-', 'null', 'None'):
+                return ''
+            return ip
+
+        for row in datarows:
+            if not isinstance(row, list):
+                continue
+            src = ''
+            if idx_source >= 0 and idx_source < len(row) and row[idx_source] is not None:
+                src = str(row[idx_source]).strip()
+            hst = ''
+            if idx_host >= 0 and idx_host < len(row) and row[idx_host] is not None:
+                hst = str(row[idx_host]).strip()
+            label = src or hst or 'unknown'
+            key = label.lower()
+            if key not in by_lower:
+                by_lower[key] = {'name': label, 'count': 0}
+            by_lower[key]['count'] += 1
+
+            ip = _row_ip_val(row, idx_ssip) or _row_ip_val(row, idx_gr)
+            ik = ip.lower() if ip else '__no_transport_ip__'
+            if ik not in by_ip:
+                by_ip[ik] = {'name': ip or ('—' if not ip else ip), 'count': 0}
+            by_ip[ik]['count'] += 1
+
+            if ik not in emit_raw:
+                emit_raw[ik] = {'ip': ip, 'by_source': {}, 'total': 0}
+            emit_raw[ik]['total'] += 1
+            emit_raw[ik]['by_source'][label] = int(emit_raw[ik]['by_source'].get(label, 0)) + 1
+
+        out['sampleRows'] = len(datarows)
+        ranked = sorted(by_lower.values(), key=lambda x: (-int(x['count']), str(x['name']).lower()))[:40]
+        out['senders'] = [{'name': x['name'], 'count': x['count']} for x in ranked]
+        ranked_ip = sorted(by_ip.values(), key=lambda x: (-int(x['count']), str(x['name']).lower()))[:20]
+        out['remoteSenders'] = [{'name': x['name'], 'count': x['count']} for x in ranked_ip]
+
+        emit_list: list[dict] = []
+        for _ik, blob in sorted(emit_raw.items(), key=lambda x: -int(x[1]['total'])):
+            ip_disp = str(blob.get('ip') or '').strip()
+            by_src = blob.get('by_source') or {}
+            if not isinstance(by_src, dict):
+                by_src = {}
+            sources_ranked = sorted(by_src.items(), key=lambda x: (-int(x[1]), str(x[0]).lower()))[:60]
+            src_names = [str(n) for n, _c in sources_ranked]
+            cls = _syslog_emitter_classify(src_names)
+            q_ip = _syslog_transport_ip_query(ip_disp) if ip_disp else 'log_type:network'
+            emit_list.append(
+                {
+                    'ip': ip_disp or None,
+                    'noTransportIp': not bool(ip_disp),
+                    'sampleCount': int(blob.get('total') or 0),
+                    'distinctSources': len(by_src),
+                    'role': cls.get('role', 'generic'),
+                    'title': cls.get('title', 'Syslog gönderen'),
+                    'sources': [{'name': n, 'count': int(c)} for n, c in sources_ranked],
+                    'graylogQuery': q_ip,
+                }
+            )
+        _role_pri = {'vcenter': 0, 'vmware': 1, 'firewall': 2, 'generic': 3}
+        emit_list.sort(
+            key=lambda x: (
+                _role_pri.get(str(x.get('role') or ''), 9),
+                -int(x.get('sampleCount') or 0),
+            )
+        )
+        out['emitters'] = emit_list
+    except Exception as e:
+        out['error'] = str(e)
+    return out
+
+
+@app.route('/api/ingest/syslog-sources-summary', methods=['GET'])
+@login_required
+@require_role('operator')
+def ingest_syslog_sources_summary():
+    """Ajansız syslog kaynaklarının Graylog'taki görünümü (log_type:network örneklemi)."""
+    rng = request.args.get('range', default=604800, type=int)
+    rng = max(300, min(rng or 604800, 2592000))
+    snap = _collect_syslog_senders_from_graylog(range_sec=rng, sample_size=450)
+    gl_base = (os.environ.get('GRAYLOG_WEB_URL') or '').strip().rstrip('/') or None
+    return jsonify(
+        {
+            'rangeSeconds': rng,
+            'query': snap.get('query'),
+            'senders': snap.get('senders') or [],
+            'remoteSenders': snap.get('remoteSenders') or [],
+            'emitters': snap.get('emitters') or [],
+            'sampleRows': snap.get('sampleRows') or 0,
+            'error': snap.get('error'),
+            'graylogWebBase': gl_base,
+            'ipHint': (
+                'Fluent Bit artık syslog için transport katmanındaki adresi `syslog_sender_ip` alanına yazar '
+                '(5651 izlenebilirlik). Graylog `gl2_remote_ip` çoğu kurulumda GELF ile mesajı ileten '
+                'kolektör adresini gösterir; denetimde öncelik `syslog_sender_ip` + ham arşiv satırıdır. '
+                'LAN IP’sinin doğru görünmesi için merkez Fluent Bit’in syslog dinleyicisinin host ağında '
+                'çalışması veya kenarda relay önerilir — docker-compose.syslog-host.yml yorumları.'
+            ),
+        }
+    )
+
+
+@app.route('/api/ingest/syslog-drilldown', methods=['GET'])
+@login_required
+@require_role('operator')
+def ingest_syslog_drilldown():
+    """Transport IP (+ isteğe bağlı source) için örnek syslog satırları — panel detay katmanı."""
+    ip = (request.args.get('ip') or '').strip()
+    source = (request.args.get('source') or '').strip()
+    rng = request.args.get('range', default=604800, type=int)
+    rng = max(300, min(rng or 604800, 2592000))
+    limit = request.args.get('limit', default=25, type=int)
+    limit = max(1, min(limit or 25, 50))
+    no_ip = (request.args.get('noIp') or '').strip().lower() in ('1', 'true', 'yes')
+    if ip:
+        base_q = _syslog_transport_ip_query(ip)
+    elif no_ip:
+        # Alan yokluğu sorgusu Graylog sürümüne göre kırılabilir; geniş örneklem.
+        base_q = 'log_type:network'
+    else:
+        base_q = 'log_type:network'
+    if source:
+        escs = _graylog_lucene_escape_term(source)
+        base_q += f' AND (source:"{escs}" OR host:"{escs}")'
+    samples = _graylog_tabular_samples_from_search_messages(base_q, rng, limit)
+    gl_base = (os.environ.get('GRAYLOG_WEB_URL') or '').strip().rstrip('/') or None
+    return jsonify(
+        {
+            'query': base_q,
+            'rangeSeconds': rng,
+            'samples': samples,
+            'graylogWebBase': gl_base,
+            'error': None,
+        }
+    )
+
+
 @app.route('/api/agent/nodes', methods=['GET'])
 @login_required
 @require_role('operator')
 def agent_nodes():
+    tokens = _load_tokens()
     nodes_payload = _safe_read_json(AGENT_NODES_PATH, {'nodes': []})
     nodes = nodes_payload.get('nodes', []) if isinstance(nodes_payload, dict) else []
+    nodes = _merge_agent_fleet_nodes(nodes, tokens)
+    nodes = _apply_fleet_suppressions(nodes)
     nodes = sorted(nodes, key=lambda x: x.get('lastSeenAt', ''), reverse=True)
     return jsonify({'nodes': nodes})
+
+
+@app.route('/api/agent/nodes/repair-from-tokens', methods=['POST'])
+@login_required
+@require_role('operator')
+def agent_nodes_repair_from_tokens():
+    """nodes.json dosyasını enrollment token kayıtlarıyla hizalar (operatör)."""
+    tokens = _load_tokens()
+    nodes_payload = _safe_read_json(AGENT_NODES_PATH, {'nodes': []})
+    nodes = nodes_payload.get('nodes', []) if isinstance(nodes_payload, dict) else []
+    merged = _merge_agent_fleet_nodes(nodes, tokens)
+    merged = _apply_fleet_suppressions(merged)
+    merged = sorted(merged, key=lambda x: x.get('lastSeenAt', ''), reverse=True)
+    _safe_write_json(AGENT_NODES_PATH, {'nodes': merged})
+    audit_event('agent.nodes_repair', 'success', {'nodeCount': len(merged)})
+    return jsonify({'message': 'nodes.json enrollment ile hizalandı', 'nodes': merged, 'count': len(merged)})
 
 
 @app.route('/api/agent/onboarding-history', methods=['GET'])
@@ -8098,6 +8716,57 @@ def _graylog_lucene_escape_term(term: str) -> str:
     return str(term).replace('\\', '\\\\').replace('"', '\\"')
 
 
+def _syslog_transport_ip_query(ip: str) -> str:
+    """Lucene: örneklemdeki transport IP (5651: öncelik syslog_sender_ip; yoksa gl2_remote_ip)."""
+    esc = _graylog_lucene_escape_term((ip or '').strip())
+    if not esc:
+        return 'log_type:network'
+    return f'log_type:network AND (syslog_sender_ip:"{esc}" OR gl2_remote_ip:"{esc}")'
+
+
+def _syslog_emitter_classify(source_names: list) -> dict:
+    """Heuristik sınıf — pipeline asset_id yokken vCenter yoğunluğunu tahmin eder."""
+    blob = ' '.join(str(n or '').lower() for n in source_names)
+    vpx = ('vpxd', 'vimond', 'vmafdd', 'vsphere-ui', 'vsphere-client', 'vcenter', 'vmware')
+    vmw = ('rhttpproxy', 'vapi-endpoint', 'lookupsvc', 'sts', 'applmgmt', 'vsan', 'vmware', 'dnsmasq')
+    score_v = sum(1 for k in vpx if k in blob)
+    score_m = sum(1 for k in vmw if k in blob)
+    if score_v >= 1 or score_v + score_m >= 3:
+        return {'role': 'vcenter', 'title': 'vCenter / vSphere (tahmini)'}
+    if score_m >= 2:
+        return {'role': 'vmware', 'title': 'VMware servisleri (tahmini)'}
+    if any(x in blob for x in ('paloalto', 'fortigate', 'fortios', 'asa ', 'srx', 'firewall')):
+        return {'role': 'firewall', 'title': 'Güvenlik duvarı (tahmini)'}
+    return {'role': 'generic', 'title': 'Syslog gönderen'}
+
+
+def _looks_like_ipv4(s: str) -> bool:
+    p = (s or '').strip().split('.')
+    if len(p) != 4:
+        return False
+    try:
+        return all(0 <= int(x) <= 255 for x in p)
+    except ValueError:
+        return False
+
+
+def _preferred_agent_ip_from_payload(payload) -> str | None:
+    """Heartbeat/activate gövdesinden uç makinenin IPv4 adresi (NAT arkası panel IP'sinden öncelikli)."""
+    if not isinstance(payload, dict):
+        return None
+    for k in ('agentIpv4', 'agent_ip', 'sourceIp', 'source_ipv4', 'clientIp'):
+        v = str(payload.get(k) or '').strip()
+        if not v or not _looks_like_ipv4(v):
+            continue
+        octets = v.split('.')
+        if octets[0] == '127':
+            continue
+        if octets[0] == '169' and octets[1] == '254':
+            continue
+        return v
+    return None
+
+
 def _graylog_message_scalar(msg: dict, key: str) -> str:
     if not isinstance(msg, dict):
         return ''
@@ -8117,13 +8786,83 @@ def _graylog_message_scalar(msg: dict, key: str) -> str:
 def _graylog_parse_search_totals(body) -> int:
     if not isinstance(body, dict):
         return 0
-    total = body.get('total_results')
-    if total is None:
-        total = (body.get('meta') or {}).get('total_results')
+    meta = body.get('meta') if isinstance(body.get('meta'), dict) else {}
+    for key in ('total_results', 'total', 'hits', 'count', 'documents_total'):
+        v = body.get(key)
+        if v is None and isinstance(meta, dict):
+            v = meta.get(key)
+        if v is not None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                continue
+    return 0
+
+
+def _graylog_search_response_messages(data: dict) -> list:
+    """Graylog sürümleri / API: messages, results veya iç içe data.messages."""
+    if not isinstance(data, dict):
+        return []
+    msgs = data.get('messages')
+    if isinstance(msgs, list) and msgs:
+        return msgs
+    for key in ('results', 'values', 'documents'):
+        v = data.get(key)
+        if isinstance(v, list) and v:
+            return v
+    nested = data.get('data') or data.get('response')
+    if isinstance(nested, dict):
+        for key in ('messages', 'results', 'values'):
+            v = nested.get(key)
+            if isinstance(v, list) and v:
+                return v
+    return []
+
+
+def _graylog_tabular_samples_from_search_messages(query_string: str, range_seconds: int, limit: int):
+    """Graylog 6.x: universal/relative bazen total döndürüp messages gövdesini boş bırakır; /search/messages ile örnek al."""
+    if int(limit) <= 0:
+        return []
     try:
-        return int(total or 0)
-    except (TypeError, ValueError):
-        return 0
+        payload = {
+            'query': query_string,
+            'timerange': {'type': 'relative', 'range': max(60, int(range_seconds))},
+            'size': max(1, min(int(limit), 50)),
+            'fields': ['timestamp', 'message', 'source', 'host', 'full_message', 'msg'],
+        }
+        r = _graylog_api_post('/search/messages', json=payload, timeout=25)
+        if r.status_code != 200:
+            return []
+        data = r.json() if r.content else {}
+        schema = data.get('schema') or []
+        field_names = []
+        for col in schema:
+            if col.get('column_type') == 'field' and col.get('field'):
+                field_names.append(col['field'])
+        datarows = data.get('datarows') or []
+        out = []
+        for row in datarows:
+            if not isinstance(row, list):
+                continue
+            msg = {}
+            for i, name in enumerate(field_names):
+                if i < len(row):
+                    msg[name] = row[i]
+            ts = _graylog_message_scalar(msg, 'timestamp') or ''
+            text = (
+                _graylog_message_scalar(msg, 'message')
+                or _graylog_message_scalar(msg, 'full_message')
+                or _graylog_message_scalar(msg, 'msg')
+            )
+            src = _graylog_message_scalar(msg, 'source') or _graylog_message_scalar(msg, 'host') or ''
+            if len(text) > 480:
+                text = text[:477] + '...'
+            out.append({'timestamp': ts, 'message': text or '—', 'source': src})
+            if len(out) >= max(1, min(int(limit), 50)):
+                break
+        return out
+    except Exception:
+        return []
 
 
 def _graylog_search_universal_absolute_get(
@@ -8152,6 +8891,32 @@ def _graylog_search_universal_absolute_get(
     )
 
 
+def _graylog_search_universal_relative_get(
+    query_string: str,
+    range_seconds: int,
+    limit: int,
+    fields: str = 'timestamp,message,host,source,ComputerName',
+):
+    """
+    Graylog 6.x: bazı kurulumlarda universal/absolute + limit=0 indeks çözümlemesi boş kalıp
+    OpenSearch index_not_found üretebiliyor; panel sayımları için relative aralık daha kararlıdır.
+    """
+    lim = 1 if int(limit) <= 0 else max(1, min(int(limit), 100))
+    rng = max(60, int(range_seconds))
+    return _graylog_api_get(
+        '/search/universal/relative',
+        params={
+            'query': query_string,
+            'range': str(rng),
+            'limit': str(lim),
+            'fields': fields,
+            'decorate': 'false',
+        },
+        headers={'Accept': 'application/json'},
+        timeout=25,
+    )
+
+
 def _graylog_host_volume(hostname: str, hours: int, limit: int, seen_ip: str | None = None):
     """
     Graylog'ta host/source/ComputerName (+ isteğe bağlı source:IP) ile mesaj sayısı ve örnekler.
@@ -8169,17 +8934,19 @@ def _graylog_host_volume(hostname: str, hours: int, limit: int, seen_ip: str | N
         f'host:"{esc_l}"',
         f'source:"{esc_l}"',
         f'ComputerName:"{esc_l}"',
+        # Windows winlog JSON bazen yalnızca Message içinde makine adı taşır
+        f'Message:"{esc}"',
+        f'Message:"{esc_l}"',
+        # Merkez pipeline / GELF: hostname bazen yalnızca `msg` metin alanında geçer
+        f'msg:*{hn}*',
+        f'msg:*{hn.lower()}*',
     ]
-    sip = str(seen_ip or '').strip()
-    if sip and len(sip) <= 64:
-        parts.append(f'source:"{_graylog_lucene_escape_term(sip)}"')
+    # gl2_remote_ip envanter IP ile birleştirilmez: heartbeat NAT/proxy adresi yanlış olunca sorgu yanıltıcı olur.
     query_string = '(' + ' OR '.join(parts) + ')'
     try:
-        from_ts = datetime.utcnow() - timedelta(hours=max(1, int(hours)))
-        to_ts = datetime.utcnow()
-        from_iso = from_ts.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-        to_iso = to_ts.strftime('%Y-%m-%dT%H:%M:%S.000Z')
-        r = _graylog_search_universal_absolute_get(query_string, from_iso, to_iso, limit)
+        range_sec = int(max(1, int(hours))) * 3600
+        fields = 'timestamp,message,host,source,ComputerName,msg,full_message'
+        r = _graylog_search_universal_relative_get(query_string, range_sec, limit, fields=fields)
         if r.status_code != 200:
             return {
                 'totalCount': None,
@@ -8188,26 +8955,67 @@ def _graylog_host_volume(hostname: str, hours: int, limit: int, seen_ip: str | N
             }
         data = r.json() if r.content else {}
         total = _graylog_parse_search_totals(data)
+        # Yapılandırılmış alanlarda yoksa: tüm alanlarda ifade araması (Graylog varsayılan indeks)
+        if total == 0:
+            fb_q = f'"{esc}"'
+            r2 = _graylog_search_universal_relative_get(fb_q, range_sec, limit, fields=fields)
+            if r2.status_code == 200:
+                data2 = r2.json() if r2.content else {}
+                t2 = _graylog_parse_search_totals(data2)
+                if t2 > 0:
+                    data = data2
+                    total = t2
         samples = []
         seen_ids = set()
-        for m in data.get('messages') or []:
+        for m in _graylog_search_response_messages(data):
             if not isinstance(m, dict):
                 continue
             raw = m.get('message')
-            if not isinstance(raw, dict):
+            if isinstance(raw, str):
+                ts = str(m.get('timestamp') or '')
+                text = raw
+                src = str(m.get('source') or m.get('host') or '')
+            elif isinstance(raw, dict):
+                dedupe_key = (
+                    raw.get('_id') or raw.get('id'),
+                    m.get('index') or raw.get('index'),
+                )
+                if dedupe_key == (None, None):
+                    dedupe_key = ('__noid__', id(m))
+                if dedupe_key in seen_ids:
+                    continue
+                seen_ids.add(dedupe_key)
+                ts = raw.get('timestamp') or m.get('timestamp') or ''
+                text = (
+                    _graylog_message_scalar(raw, 'message')
+                    or _graylog_message_scalar(raw, 'full_message')
+                    or _graylog_message_scalar(raw, 'msg')
+                )
+                src = _graylog_message_scalar(raw, 'source') or _graylog_message_scalar(raw, 'host')
+            elif any(k in m for k in ('message', 'source', 'timestamp', 'full_message', 'host', 'msg')):
+                raw = m
+                dedupe_key = (raw.get('_id') or raw.get('id'), raw.get('index'))
+                if dedupe_key == (None, None):
+                    dedupe_key = ('__noid__', id(m))
+                if dedupe_key in seen_ids:
+                    continue
+                seen_ids.add(dedupe_key)
+                ts = raw.get('timestamp') or ''
+                text = (
+                    _graylog_message_scalar(raw, 'message')
+                    or _graylog_message_scalar(raw, 'full_message')
+                    or _graylog_message_scalar(raw, 'msg')
+                )
+                src = _graylog_message_scalar(raw, 'source') or _graylog_message_scalar(raw, 'host')
+            else:
                 continue
-            dedupe_key = (raw.get('_id'), m.get('index'))
-            if dedupe_key in seen_ids:
-                continue
-            seen_ids.add(dedupe_key)
-            ts = raw.get('timestamp') or m.get('timestamp') or ''
-            text = _graylog_message_scalar(raw, 'message') or _graylog_message_scalar(raw, 'full_message')
             if len(text) > 480:
                 text = text[:477] + '...'
-            src = _graylog_message_scalar(raw, 'source') or _graylog_message_scalar(raw, 'host')
             samples.append({'timestamp': ts, 'message': text, 'source': src})
             if len(samples) >= max(0, min(int(limit), 50)):
                 break
+        if int(limit) > 0 and not samples:
+            samples = _graylog_tabular_samples_from_search_messages(query_string, range_sec, limit)
         return {'totalCount': total, 'samples': samples, 'error': None}
     except Exception as exc:
         return {'totalCount': None, 'samples': [], 'error': str(exc)}
@@ -8217,8 +9025,11 @@ def _graylog_host_volume(hostname: str, hours: int, limit: int, seen_ip: str | N
 @login_required
 @require_role('operator')
 def agent_fleet_overview():
+    tokens = _load_tokens()
     nodes_payload = _safe_read_json(AGENT_NODES_PATH, {'nodes': []})
     nodes = nodes_payload.get('nodes', []) if isinstance(nodes_payload, dict) else []
+    nodes = _merge_agent_fleet_nodes(nodes, tokens)
+    nodes = _apply_fleet_suppressions(nodes)
     nodes = sorted(nodes, key=lambda x: x.get('lastSeenAt', ''), reverse=True)
     out = []
     for node in nodes[:120]:
@@ -8252,8 +9063,11 @@ def agent_fleet_host_detail():
     q = (request.args.get('hostname') or '').strip()
     if not q:
         return jsonify({'error': 'hostname required'}), 400
+    tokens = _load_tokens()
     nodes_payload = _safe_read_json(AGENT_NODES_PATH, {'nodes': []})
     nodes = nodes_payload.get('nodes', []) if isinstance(nodes_payload, dict) else []
+    nodes = _merge_agent_fleet_nodes(nodes, tokens)
+    nodes = _apply_fleet_suppressions(nodes)
     node = None
     for n in nodes:
         if str(n.get('hostname') or '').strip() == q:
@@ -8277,6 +9091,151 @@ def agent_fleet_host_detail():
     })
 
 
+def _fleet_suppression_payload_mutable():
+    raw = _safe_read_json(AGENT_FLEET_SUPPRESSIONS_PATH, _default_fleet_suppressions_payload())
+    if not isinstance(raw, dict):
+        raw = _default_fleet_suppressions_payload()
+    tids = [str(x or '').strip() for x in (raw.get('tokenIds') or raw.get('token_ids') or []) if str(x or '').strip()]
+    hns = [str(x or '').strip().lower() for x in (raw.get('hostnames') or []) if str(x or '').strip()]
+    return {'tokenIds': tids, 'hostnames': hns}
+
+
+def _persist_fleet_suppressions_mutable(sup):
+    payload = {
+        'tokenIds': sorted(set(str(x) for x in sup['tokenIds'] if str(x).strip())),
+        'hostnames': sorted(set(str(x).strip().lower() for x in sup['hostnames'] if str(x).strip())),
+    }
+    _safe_write_json(AGENT_FLEET_SUPPRESSIONS_PATH, payload)
+
+
+def _prune_agent_nodes_for_fleet_hide(token_id, hostname_only_legacy):
+    """nodes.json içinde gizlenen satırları temizler (tokenId veya yalnızca hostname ile eşleşen tokenId’siz satır)."""
+    nodes_payload = _safe_read_json(AGENT_NODES_PATH, {'nodes': []})
+    nodes = nodes_payload.get('nodes', []) if isinstance(nodes_payload, dict) else []
+    hn_key = str(hostname_only_legacy or '').strip().lower()
+    new_nodes = []
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        nid = str(n.get('tokenId') or '').strip()
+        if token_id and nid == token_id:
+            continue
+        if not token_id and hn_key and not nid:
+            nhn = str(n.get('hostname') or '').strip().lower()
+            if nhn == hn_key:
+                continue
+        new_nodes.append(n)
+    _safe_write_json(AGENT_NODES_PATH, {'nodes': new_nodes})
+
+
+@app.route('/api/agent/fleet-node/hide-from-list', methods=['POST'])
+@login_required
+@require_role('operator')
+@csrf_protect
+def agent_fleet_node_hide_from_list():
+    """Panel envanterinden satır gizler; token kaydı silinmez. Token birleşimiyle geri gelen hayalet satırlar için kalıcıdır."""
+    payload = request.json or {}
+    token_id = str(payload.get('tokenId') or '').strip()
+    hostname_arg = str(payload.get('hostname') or '').strip()
+    hostname_only = False
+    if not token_id and not hostname_arg:
+        return jsonify({'error': 'tokenId veya hostname gerekli'}), 400
+
+    merged_full = _merged_agent_fleet_nodes_unsuppressed()
+    merged_vis = _apply_fleet_suppressions(list(merged_full))
+    sup_sets = _load_fleet_suppressions_sets()
+    tid_set = sup_sets['tokenIds']
+    hn_set = sup_sets['hostnames']
+
+    row = None
+    hostname_only = False
+    if token_id:
+        row = next((n for n in merged_full if str(n.get('tokenId') or '').strip() == token_id), None)
+        if not row:
+            return jsonify({'error': 'Bu tokenId ile eşleşen envanter satırı yok'}), 404
+        if str(row.get('tokenId') or '').strip() in tid_set:
+            _prune_agent_nodes_for_fleet_hide(token_id, None)
+            audit_event('agent.fleet_hide', 'success', {'tokenId': token_id, 'idempotent': True})
+            return jsonify({'message': 'Bu kayıt zaten listeden gizli', 'alreadyHidden': True})
+    else:
+        matches = [
+            n for n in merged_vis
+            if str(n.get('hostname') or '').strip().lower() == hostname_arg.lower()
+        ]
+        if len(matches) > 1:
+            return jsonify({
+                'error': 'Aynı ada sahip birden fazla uç görünüyor; hangi satır olduğunu belirtmek için tokenId gönderin.',
+            }), 400
+        if len(matches) == 1:
+            row = matches[0]
+        else:
+            return jsonify({'error': 'Bu ada sahip görünür envanter satırı yok (zaten gizli veya yok).'}), 404
+        token_id = str(row.get('tokenId') or '').strip()
+        hostname_only = not bool(token_id)
+        if token_id and token_id in tid_set:
+            _prune_agent_nodes_for_fleet_hide(token_id, None)
+            audit_event('agent.fleet_hide', 'success', {'tokenId': token_id, 'idempotent': True})
+            return jsonify({'message': 'Bu kayıt zaten listeden gizli', 'alreadyHidden': True})
+
+    sup = _fleet_suppression_payload_mutable()
+    changed = False
+    if token_id:
+        if token_id not in sup['tokenIds']:
+            sup['tokenIds'].append(token_id)
+            changed = True
+    elif hostname_only:
+        hk = hostname_arg.strip().lower()
+        if hk not in sup['hostnames']:
+            sup['hostnames'].append(hk)
+            changed = True
+    if changed:
+        _persist_fleet_suppressions_mutable(sup)
+
+    if token_id:
+        _prune_agent_nodes_for_fleet_hide(token_id, None)
+    else:
+        _prune_agent_nodes_for_fleet_hide('', hostname_arg)
+
+    audit_event('agent.fleet_hide', 'success', {
+        'tokenId': token_id or None,
+        'hostname': str(row.get('hostname') or hostname_arg or ''),
+        'hostnameOnly': hostname_only,
+    })
+    return jsonify({
+        'message': 'Kayıt panel listesinden kaldırıldı (token dosyasında durur; ajan yeniden bildirirse satır tekrar görünebilir — gizlemeyi kaldırın veya tokenı iptal edin).',
+        'tokenId': token_id or None,
+        'hostname': str(row.get('hostname') or hostname_arg or ''),
+    })
+
+
+@app.route('/api/agent/fleet-node/unhide-from-list', methods=['POST'])
+@login_required
+@require_role('operator')
+@csrf_protect
+def agent_fleet_node_unhide_from_list():
+    """fleet-suppressions.json kaydından kaldırır; nodes.json otomatik doldurulmaz (Yenile / Disk eşitle)."""
+    payload = request.json or {}
+    token_id = str(payload.get('tokenId') or '').strip()
+    hostname_arg = str(payload.get('hostname') or '').strip().lower()
+    if not token_id and not hostname_arg:
+        return jsonify({'error': 'tokenId veya hostname gerekli'}), 400
+
+    sup = _fleet_suppression_payload_mutable()
+    before = (tuple(sup['tokenIds']), tuple(sup['hostnames']))
+    if token_id:
+        sup['tokenIds'] = [x for x in sup['tokenIds'] if str(x).strip() != token_id]
+    if hostname_arg:
+        sup['hostnames'] = [x for x in sup['hostnames'] if str(x).strip().lower() != hostname_arg]
+    after = (tuple(sup['tokenIds']), tuple(sup['hostnames']))
+    if before == after:
+        audit_event('agent.fleet_unhide', 'success', {'tokenId': token_id or None, 'idempotent': True})
+        return jsonify({'message': 'Gizleme kaydı zaten yoktu', 'alreadyVisible': True})
+
+    _persist_fleet_suppressions_mutable(sup)
+    audit_event('agent.fleet_unhide', 'success', {'tokenId': token_id or None, 'hostname': hostname_arg or None})
+    return jsonify({'message': 'Gizleme kaldırıldı; listeyi yenileyin.'})
+
+
 def _public_ingest_host_for_agent():
     host = _normalize_host(request.host.split(':')[0] if request.host else '') or _normalize_host(
         os.environ.get('LOG_PLATFORM_PUBLIC_HOST', '')
@@ -8289,14 +9248,11 @@ def _graylog_search_phrase_last_minutes(phrase: str, minutes: int = 15):
     if not phrase or len(phrase) < 6:
         return None, 'probe_too_short'
     try:
-        from_ts = datetime.utcnow() - timedelta(minutes=max(1, minutes))
-        to_ts = datetime.utcnow()
         safe = phrase.replace('\\', '\\\\').replace('"', '\\"')
         q = f'"{safe}"'
-        r = _graylog_search_universal_absolute_get(
+        r = _graylog_search_universal_relative_get(
             q,
-            from_ts.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-            to_ts.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+            max(60, int(max(1, minutes)) * 60),
             1,
             fields='timestamp,message',
         )

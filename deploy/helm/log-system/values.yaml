@@ -1,0 +1,395 @@
+# Log System Enterprise Deployment - Values
+# Three deployment profiles: k3s (lightweight), production (EKS/AKS/GKE), custom
+
+# ============================================================================
+# GLOBAL CONFIGURATION
+# ============================================================================
+global:
+  # Operasyon ve Graylog kök zaman dilimi (TÜBİTAK / TR saha: Europe/Istanbul)
+  timezone: "Europe/Istanbul"
+  storageClass: ""  # Use default (local-path for K3s, manually provision for prod)
+  domain: "log-system.local"
+
+# ============================================================================
+# HEALTH PROBES CONFIGURATION (Applied to all services)
+# ============================================================================
+probes:
+  # Stateful services: TCP-based health (MongoDB, Kafka KRaft, OpenSearch)
+  statefulset:
+    startup:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 30  # 5 minutes total
+    readiness:
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+  # REST services: HTTP-based health (Graylog, Signing Engine, Log UI)
+  deployment:
+    startup:
+      initialDelaySeconds: 15
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 30  # 2.5 minutes total
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 3
+      timeoutSeconds: 2
+      failureThreshold: 3
+    liveness:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+# ============================================================================
+# AUTO-SCALING CONFIGURATION (HPA & Resource Limits)
+# ============================================================================
+autoscaling:
+  # Kafka: Scale on lag + CPU (critical for log throughput)
+  kafka:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    # Custom metric: kafka_topic_partition_lag (requires metrics producer)
+    customMetrics:
+      enabled: false  # Set true if you have Prometheus + custom exporter
+      lag:
+        topicName: "__consumer_offsets"
+        targetValue: "100"
+
+  # Fluent-bit: Scale on memory + log throughput
+  fluentBit:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 85
+
+  # Graylog: Scale on CPU (query/indexing load)
+  graylog:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 85
+
+  # Signing Engine: Batch job-like, minimal scaling
+  signingEngine:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+
+# ============================================================================
+# POD DISRUPTION BUDGETS (Cluster HA)
+# ============================================================================
+podDisruptionBudgets:
+  # Critical quorum services: ensure min available during node drains
+  kafka:
+    enabled: true
+    minAvailable: 2  # Out of 3: maintain 2 brokers during maintenance
+
+  # Essential but can tolerate brief downtime
+  opensearch:
+    enabled: true
+    minAvailable: 1  # Out of 1 (or 3 if scaled): allow drain
+
+  graylog:
+    enabled: true
+    minAvailable: 1  # Can drain one Graylog node
+
+  fluentBit:
+    enabled: true
+    minAvailable: 1  # Can drain one log forwarder
+
+# ============================================================================
+# SERVICE CONFIGURATIONS
+# ============================================================================
+mongodb:
+  image:
+    repository: mongo
+    tag: 7.0.5
+    pullPolicy: IfNotPresent
+  replicaSet: rs0
+  port: 27017
+  service:
+    port: 27017
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+
+# Zookeeper kaldırıldı - Kafka KRaft kullanılıyor (docker-compose ile uyumlu)
+
+kafka:
+  image:
+    repository: confluentinc/cp-kafka
+    tag: 7.6.0
+    pullPolicy: IfNotPresent
+  replicas: 3
+  port: 9092
+  service:
+    port: 9092
+  jmxPort: 9999
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi
+  config:
+    compressionType: "snappy"
+    minInSyncReplicas: 2
+    defaultReplicationFactor: 3
+    logRetentionHours: 168
+    logSegmentBytes: "1073741824"
+    autoCreateTopics: "true"
+  clusterId: "MkU3OEVBNTcwNTJENDM2Qk"
+
+opensearch:
+  image:
+    repository: opensearchproject/opensearch
+    tag: 2.18.0
+    pullPolicy: IfNotPresent
+  replicas: 1  # Scale to 3 for production
+  port: 9200
+  service:
+    port: 9200
+  env:
+    clusterName: opensearch-cluster
+    javaOpts: "-Xms512m -Xmx512m"
+    initialAdminPassword: "ChangeMe_2026!"
+    securityDisabled: "false"
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 200m
+    limits:
+      memory: 2Gi
+      cpu: 1000m
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 50Gi
+
+graylog:
+  image:
+    repository: graylog/graylog
+    tag: 6.1.2
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 9000
+  service:
+    port: 9000
+  apiPort: 12900
+  env:
+    passwordSecret: "please-change-this-secret"
+    rootPasswordSha2: ""
+    javaOpts: "-Xms512m -Xmx512m -Duser.timezone=Europe/Istanbul"
+    smtpEnabled: "false"
+    smtpHost: "smtp.gmail.com"
+    smtpPort: "587"
+    smtpUseAuth: "true"
+    smtpUseTls: "true"
+    smtpUser: ""
+    smtpPassword: ""
+    smtpFrom: "logs@example.com"
+    webUrl: "http://localhost:9000"
+    subjectPrefix: "[Log Platform]"
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+  javaHeapSize: "512m"
+  elasticsearchHosts: "opensearch-0.opensearch-service,opensearch-1.opensearch-service,opensearch-2.opensearch-service"
+
+fluentBit:
+  image:
+    repository: fluent/fluent-bit
+    tag: 3.2.4
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 5140  # UDP (ajan JSON)
+  httpPort: 2020
+  # Tek kiracı: fluent-bit.conf içinde company_id yoksa ${COMPANY_ID} basılır (çok kiracı: uç JSON + Graylog pipeline)
+  companyId: default
+  # Klasik syslog (vCenter / firewall); Docker compose ile aynı mantık: Source_Address_Key → syslog_sender_ip
+  syslog:
+    udpPort: 1514
+    tcpPort: 1514
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+  config:
+    inputs: |
+      [INPUT]
+      Name udp
+      Listen 0.0.0.0
+      Port 5140
+      Format json
+      Tag from.syslog
+
+      [INPUT]
+      Name tcp
+      Listen 0.0.0.0
+      Port 24224
+      Format json
+      Tag from.forward
+
+      [INPUT]
+      Name               syslog
+      Mode               udp
+      Listen             0.0.0.0
+      Port               1514
+      Parser             syslog-rfc3164
+      Tag                ingest.syslog
+      Source_Address_Key syslog_sender_ip
+
+      [INPUT]
+      Name               syslog
+      Mode               tcp
+      Listen             0.0.0.0
+      Port               1514
+      Parser             syslog-rfc3164
+      Tag                ingest.syslog
+      Source_Address_Key syslog_sender_ip
+
+    filters: |
+      [FILTER]
+      Name modify
+      Match *
+      Add environment prod
+      Add cluster kubernetes
+
+      [FILTER]
+      Name            record_modifier
+      Match           ingest.syslog
+      Record          compliance_5651 true
+
+    outputs: |
+      # Y-Model: Archive + Analysis
+      [OUTPUT]
+      Name file
+      Match *
+      Path /archive/logs/%Y%m%d
+      mkdir_mode 0755
+      Format json
+
+      [OUTPUT]
+      Name es
+      Match *
+      Host opensearch-0.opensearch-service
+      Port 9200
+      HTTP_User elastic
+      HTTP_Passwd ${OPENSEARCH_PASSWORD}
+      Logstash_Format On
+      Type _doc
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 100Gi
+    archiveSize: 100Gi
+    archiveRetention: 90  # days
+
+signingEngine:
+  image:
+    repository: log-system/signing-engine
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 9080
+  service:
+    type: ClusterIP
+    port: 9080
+  env:
+    SIGNER_TYPE: OPEN_SOURCE
+    ARCHIVE_DESTINATION: local
+    SIGNING_ENGINE_TZ: Europe/Istanbul
+    SIGNING_ENGINE_SCHEDULE_ENABLED: "true"
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size:
+      archive: 20Gi
+      signed: 20Gi
+      worm: 20Gi
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 512Mi
+      cpu: 200m
+  config:
+    signerType: "TUBITAK"  # TUBITAK, OPEN_SOURCE, SIMULATED
+    scheduleInterval: "0 2 * * *"  # Daily 2 AM
+    logTargetPath: "/archive/logs"
+    archivePath: "/archive/signed"
+
+logManagementUi:
+  image:
+    repository: log-system/log-management-ui
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8080
+  service:
+    port: 8080
+  env:
+    flaskEnv: production
+    platformMode: k8s
+    k8sNamespace: default
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 100m
+  graylogApiUrl: "http://graylog-service:12900"
+  rbac:
+    enabled: true
+    serviceAccount:
+      create: true
+      name: ""

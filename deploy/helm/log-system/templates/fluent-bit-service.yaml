@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-fluent-bit
+spec:
+  type: ClusterIP
+  selector:
+    app: fluent-bit
+  ports:
+    - port: {{ .Values.fluentBit.port }}
+      targetPort: {{ .Values.fluentBit.port }}
+      protocol: UDP
+      name: udp
+    - port: {{ .Values.fluentBit.httpPort }}
+      targetPort: {{ .Values.fluentBit.httpPort }}
+      protocol: TCP
+      name: http
+    - port: {{ .Values.fluentBit.syslog.udpPort }}
+      targetPort: {{ .Values.fluentBit.syslog.udpPort }}
+      protocol: UDP
+      name: syslog-udp
+    - port: {{ .Values.fluentBit.syslog.tcpPort }}
+      targetPort: {{ .Values.fluentBit.syslog.tcpPort }}
+      protocol: TCP
+      name: syslog-tcp

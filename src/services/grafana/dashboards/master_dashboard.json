@@ -1,0 +1,700 @@
+{
+  "id": null,
+  "title": "SOC Smart Log Engine",
+  "description": "Keşif tabanlı, self-adapting SOC dashboard. Şirket, cihaz, vendor, ürün ve sürüm otomatik olarak loglardan keşfedilir. Yeni cihaz/sürüm eklendiğinde manuel yapılandırma gerekmez.",
+  "tags": ["soc", "security", "ecs", "smart-engine"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "style": "dark",
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "company_id",
+        "label": "Şirket",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-opensearch-datasource",
+          "uid": "opensearch-main"
+        },
+        "query": "{\"find\":\"terms\",\"field\":\"company_id\",\"query\":\"*\",\"size\":200}",
+        "definition": "{\"find\":\"terms\",\"field\":\"company_id\",\"query\":\"*\",\"size\":200}",
+        "multi": false,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "host",
+        "label": "Cihaz / Kaynak",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-opensearch-datasource",
+          "uid": "opensearch-main"
+        },
+        "query": "{\"find\":\"terms\",\"field\":\"source\",\"query\":\"company_id:${company_id}\",\"size\":200}",
+        "definition": "{\"find\":\"terms\",\"field\":\"source\",\"query\":\"company_id:${company_id}\",\"size\":200}",
+        "multi": false,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "vendor",
+        "label": "Vendor",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-opensearch-datasource",
+          "uid": "opensearch-main"
+        },
+        "query": "{\"find\":\"terms\",\"field\":\"vendor\",\"query\":\"company_id:${company_id} AND source:${host}\",\"size\":200}",
+        "definition": "{\"find\":\"terms\",\"field\":\"vendor\",\"query\":\"company_id:${company_id} AND source:${host}\",\"size\":200}",
+        "multi": false,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "product",
+        "label": "Product",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-opensearch-datasource",
+          "uid": "opensearch-main"
+        },
+        "query": "{\"find\":\"terms\",\"field\":\"product\",\"query\":\"company_id:${company_id} AND source:${host} AND vendor:${vendor}\",\"size\":200}",
+        "definition": "{\"find\":\"terms\",\"field\":\"product\",\"query\":\"company_id:${company_id} AND source:${host} AND vendor:${vendor}\",\"size\":200}",
+        "multi": false,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "os_major",
+        "label": "Sürüm (OS)",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-opensearch-datasource",
+          "uid": "opensearch-main"
+        },
+        "query": "{\"find\":\"terms\",\"field\":\"os_major\",\"query\":\"company_id:${company_id} AND source:${host} AND vendor:${vendor}\",\"size\":50}",
+        "definition": "{\"find\":\"terms\",\"field\":\"os_major\",\"query\":\"company_id:${company_id} AND source:${host} AND vendor:${vendor}\",\"size\":50}",
+        "multi": false,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "status",
+        "label": "Durum",
+        "type": "custom",
+        "query": "success,needs_profile,pending",
+        "multi": false,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Ortalama olay/dk (1 dk dilimleri)",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND vendor:${vendor}",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "1m", "min_doc_count": 0}}
+          ],
+          "metrics": [
+            {"id": "1", "type": "count"}
+          ]
+        }
+      ],
+      "options": {
+        "reduceOptions": {"calcs": ["mean"], "values": false},
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 500},
+              {"color": "red", "value": 2000}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Kafka Lag Signals",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "(source:kafka* OR message:*kafka*) AND (message:*lag* OR message:*under-replicated* OR message:*consumer*)",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "options": {
+        "reduceOptions": {"calcs": ["sum"], "values": false},
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "Healthy", "color": "green"}}}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "5651 Signer Status",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "(message:*5651* OR source:*sign*) AND (message:*hata* OR message:*error* OR message:*başarısız*)",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "options": {
+        "reduceOptions": {"calcs": ["sum"], "values": false},
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "Signed / OK", "color": "green"}}}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Quality Control Early Warning",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND (normalization_status:needs_profile OR _exists_:normalization_alert)",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "options": {
+        "reduceOptions": {"calcs": ["sum"], "values": false},
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 10},
+              {"color": "red", "value": 50}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "En yoğun uzak IP (gl2_remote_ip)",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 4},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND vendor:${vendor}",
+          "bucketAggs": [
+            {"id": "2", "type": "terms", "field": "gl2_remote_ip", "settings": {"size": "50", "order": "desc", "orderBy": "_count", "min_doc_count": 1}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "footer": {"show": false, "reducer": ["sum"]}
+      },
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "left"}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Count"},
+            "properties": [{"id": "displayName", "value": "Olay sayısı"}]
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "heatmap",
+      "title": "Log Type Heatmap",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 4},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND vendor:${vendor}",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "10m", "min_doc_count": 1}},
+            {"id": "3", "type": "terms", "field": "log_type", "settings": {"size": "20", "order": "desc", "orderBy": "_count"}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "continuous-GrYlRd"}
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {"show": true}
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Son loglar",
+      "description": "Üstteki şirket / cihaz / vendor filtreleri ve zaman aralığı uygulanır. Mesaj sütunu satır kaydırmalıdır.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 13},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND vendor:${vendor}",
+          "bucketAggs": [],
+          "metrics": [{"id": "1", "type": "raw_document", "settings": {"size": "80"}}]
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "format": "json",
+            "keepTime": false,
+            "replace": true,
+            "source": "A"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "_id": true,
+              "_index": true,
+              "_score": true,
+              "_type": true,
+              "gl2_accounted_message_size": true,
+              "gl2_message_id": true,
+              "gl2_processing_duration_ms": true,
+              "gl2_processing_timestamp": true,
+              "gl2_receive_timestamp": true,
+              "gl2_source_input": true,
+              "gl2_source_node": true,
+              "gl2_remote_port": true,
+              "ident": true,
+              "pri": true,
+              "timezone": true,
+              "streams": true
+            },
+            "indexByName": {
+              "timestamp": 0,
+              "message": 1,
+              "source": 2,
+              "vendor": 3,
+              "company_id": 4,
+              "syslog_sender_ip": 5,
+              "gl2_remote_ip": 6,
+              "log_type": 7,
+              "compliance_5651": 8,
+              "log_env": 9,
+              "log_source": 10,
+              "ingest_mode": 11,
+              "product": 12,
+              "normalization_status": 13,
+              "destination.ip": 14
+            },
+            "renameByName": {
+              "timestamp": "Zaman",
+              "message": "Mesaj",
+              "company_id": "Şirket",
+              "source": "Cihaz",
+              "vendor": "Vendor",
+              "product": "Ürün",
+              "syslog_sender_ip": "Syslog gönderen (IP)",
+              "gl2_remote_ip": "Graylog eş (IP)",
+              "destination.ip": "Hedef IP",
+              "log_type": "Log tipi",
+              "compliance_5651": "5651",
+              "log_env": "Ortam",
+              "log_source": "Kaynak",
+              "ingest_mode": "Alım",
+              "normalization_status": "Norm."
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {"type": "auto"},
+            "filterable": true,
+            "inspect": false,
+            "minWidth": 80,
+            "wrapText": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Zaman"},
+            "properties": [
+              {"id": "custom.width", "value": 190},
+              {"id": "unit", "value": "dateTimeAsIso"},
+              {"id": "decimals", "value": 0},
+              {"id": "custom.wrapText", "value": false}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Mesaj"},
+            "properties": [
+              {"id": "custom.width", "value": null},
+              {"id": "custom.minWidth", "value": 280},
+              {"id": "custom.wrapText", "value": true},
+              {"id": "custom.cellOptions", "value": {"type": "auto"}},
+              {"id": "links", "value": []}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Şirket"},
+            "properties": [{"id": "custom.width", "value": 100}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Cihaz"},
+            "properties": [{"id": "custom.width", "value": 160}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Vendor"},
+            "properties": [{"id": "custom.width", "value": 110}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Syslog gönderen (IP)"},
+            "properties": [
+              {"id": "custom.width", "value": 150},
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Graylog (syslog_sender_ip)",
+                    "url": "http://localhost:9000/search?q=syslog_sender_ip:%22${__value.raw}%22 AND company_id:${company_id} AND source:${host} AND vendor:${vendor}&rangetype=absolute&from=${__from:date:iso}&to=${__to:date:iso}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Graylog eş (IP)"},
+            "properties": [
+              {"id": "custom.width", "value": 130},
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Graylog (gl2_remote_ip)",
+                    "url": "http://localhost:9000/search?q=gl2_remote_ip:%22${__value.raw}%22 AND company_id:${company_id} AND source:${host} AND vendor:${vendor}&rangetype=absolute&from=${__from:date:iso}&to=${__to:date:iso}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Log tipi"},
+            "properties": [{"id": "custom.width", "value": 100}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "5651"},
+            "properties": [{"id": "custom.width", "value": 70}]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": ["count"],
+          "countRows": true,
+          "fields": ""
+        },
+        "sortBy": [{"displayName": "Zaman", "desc": true}]
+      }
+    },
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Network / syslog (log_type:network — vendor filtresi yok)",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23}
+    },
+    {
+      "id": 101,
+      "type": "timeseries",
+      "title": "Olay hacmi (syslog)",
+      "description": "Seçili şirket + cihaz (source). Vendor syslog’ta çoğu kurulumda unknown/boş olduğu için bu panelde kullanılmaz.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND log_type:network",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "5m", "min_doc_count": 0}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 5000},
+              {"color": "red", "value": 20000}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 102,
+      "type": "table",
+      "title": "Syslog gönderen (IP)",
+      "description": "syslog_sender_ip terimleri. Boşsa: (1) Fluent Bit Source_Address_Key + yeniden başlatma, (2) OpenSearch’te alan tipi (text ise .keyword ile deneyin), (3) Graylog→OS çıktı alanları.",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND log_type:network",
+          "bucketAggs": [
+            {"id": "2", "type": "terms", "field": "syslog_sender_ip", "settings": {"size": "25", "order": "desc", "orderBy": "_count", "min_doc_count": 0}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "options": {"showHeader": true}
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Endpoint / ajan (Elastic ECS) — vCenter syslog bu bölümde veri üretmez",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32}
+    },
+    {
+      "id": 201,
+      "type": "timeseries",
+      "title": "CPU/RAM (ajan, ECS event.dataset)",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 33},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND vendor:${vendor} AND log_type:generic AND (_exists_:event.dataset) AND (event.dataset:system.cpu OR event.dataset:system.memory)",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "5m", "min_doc_count": 0}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "type": "stat",
+      "title": "Başarısız oturum (ajan, ECS)",
+      "datasource": {
+        "type": "grafana-opensearch-datasource",
+        "uid": "opensearch-main"
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 33},
+      "targets": [
+        {
+          "refId": "A",
+          "timeField": "timestamp",
+          "query": "company_id:${company_id} AND source:${host} AND vendor:${vendor} AND log_type:generic AND (_exists_:event.category) AND event.category:authentication AND (event.outcome:failure OR message:*failed* OR message:*invalid*)",
+          "bucketAggs": [
+            {"id": "2", "type": "date_histogram", "field": "timestamp", "settings": {"interval": "auto", "min_doc_count": 0}}
+          ],
+          "metrics": [{"id": "1", "type": "count"}]
+        }
+      ],
+      "options": {
+        "reduceOptions": {"calcs": ["sum"], "values": false},
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 50},
+              {"color": "red", "value": 100}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
