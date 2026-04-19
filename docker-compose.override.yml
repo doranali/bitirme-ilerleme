@@ -1,0 +1,40 @@
+# Development overrides for Docker Compose
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
+
+services:
+  # Development configuration for Fluent Bit (more verbose logging)
+  fluent-bit:
+    environment:
+      - LOG_LEVEL=debug
+      - COMPANY_ID=${LOG_SYSTEM_COMPANY_ID:-default}
+    healthcheck:
+      start_period: 30s  # Shorter startup period for dev
+
+  # Development configuration for Graylog (no resource limits)
+  graylog:
+    environment:
+      - GRAYLOG_LOG_LEVEL=debug
+      - TZ=${TZ:-Europe/Istanbul}
+      - GRAYLOG_ROOT_TIMEZONE=${TZ:-Europe/Istanbul}
+    healthcheck:
+      start_period: 30s
+
+  # Development configuration for OpenSearch (reduced resources)
+  opensearch1:
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m"
+  opensearch2:
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m"
+  opensearch3:
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m"
+
+  # Development configuration for Grafana (no auth requirements)
+  grafana:
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  # Sentetik log-gen: docker-compose.synthetic-traffic.yml (prod paketinde yok)

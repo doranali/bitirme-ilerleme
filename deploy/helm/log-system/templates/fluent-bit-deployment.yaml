@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-fluent-bit
+spec:
+  replicas: {{ .Values.fluentBit.replicas }}
+  selector:
+    matchLabels:
+      app: fluent-bit
+  template:
+    metadata:
+      labels:
+        app: fluent-bit
+    spec:
+      containers:
+        - name: fluent-bit
+          image: "{{ .Values.fluentBit.image.repository }}:{{ .Values.fluentBit.image.tag }}"
+          imagePullPolicy: {{ .Values.fluentBit.image.pullPolicy }}
+          env:
+            - name: TZ
+              value: "{{ .Values.global.timezone }}"
+            - name: FLB_LOG_LEVEL
+              value: "info"
+            - name: COMPANY_ID
+              value: {{ .Values.fluentBit.companyId | default "default" | quote }}
+          ports:
+            - containerPort: {{ .Values.fluentBit.port }}
+              name: udp
+              protocol: UDP
+            - containerPort: {{ .Values.fluentBit.httpPort }}
+              name: http
+              protocol: TCP
+            - containerPort: {{ .Values.fluentBit.syslog.udpPort }}
+              name: syslog-udp
+              protocol: UDP
+            - containerPort: {{ .Values.fluentBit.syslog.tcpPort }}
+              name: syslog-tcp
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.deployment.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.deployment.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.deployment.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.deployment.startup.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.deployment.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.deployment.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.deployment.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.deployment.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.deployment.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.deployment.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.deployment.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.deployment.liveness.failureThreshold }}
+          resources:
+{{ toYaml .Values.fluentBit.resources | indent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc/fluent-bit.conf
+              subPath: fluent-bit.conf
+            - name: config
+              mountPath: /fluent-bit/etc/parsers.conf
+              subPath: parsers.conf
+            - name: archive
+              mountPath: /fluent-bit/arsiv
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-fluent-bit-config
+        - name: archive
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-fluent-bit-archive-pvc

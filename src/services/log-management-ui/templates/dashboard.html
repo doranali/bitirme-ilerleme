@@ -1365,6 +1365,37 @@
         body.dark-mode table.fleet-data-table td { border-color: #334155; }
         body.dark-mode table.fleet-data-table tbody tr.fleet-host-row:hover { background: rgba(59, 130, 246, 0.12); }
 
+        .fleet-syslog-emitters { display: flex; flex-direction: column; gap: 0.65rem; margin-top: 0.35rem; }
+        .fleet-syslog-card {
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background: var(--color-surface, #fff);
+        }
+        body.dark-mode .fleet-syslog-card { background: #0f172a; border-color: #334155; }
+        .fleet-syslog-card-head {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+            padding: 0.55rem 0.65rem;
+            cursor: pointer;
+            border-bottom: 1px solid transparent;
+        }
+        .fleet-syslog-card-head:hover { background: rgba(59, 130, 246, 0.06); }
+        body.dark-mode .fleet-syslog-card-head:hover { background: rgba(59, 130, 246, 0.1); }
+        .fleet-syslog-card-head.is-open { border-bottom-color: var(--color-border); }
+        .fleet-syslog-card-meta { font-size: 0.8rem; color: var(--text-muted); margin-left: auto; display: flex; gap: 0.65rem; flex-wrap: wrap; }
+        .fleet-syslog-sources-wrap { padding: 0.45rem 0.55rem 0.6rem; display: none; }
+        .fleet-syslog-sources-wrap.is-open { display: block; }
+        .fleet-syslog-source-row { cursor: pointer; }
+        .fleet-syslog-source-row:hover { background: rgba(59, 130, 246, 0.05); }
+        body.dark-mode .fleet-syslog-source-row:hover { background: rgba(59, 130, 246, 0.1); }
+        .fleet-syslog-role-badge { font-size: 0.72rem; font-weight: 600; padding: 0.12rem 0.4rem; border-radius: 0.35rem; }
+        .fleet-syslog-role-vcenter { background: #dbeafe; color: #1e40af; }
+        body.dark-mode .fleet-syslog-role-vcenter { background: #1e3a5f; color: #93c5fd; }
+        .fleet-syslog-role-vmware { background: #e0e7ff; color: #3730a3; }
+        .fleet-syslog-role-firewall { background: #ffedd5; color: #9a3412; }
+        .fleet-syslog-role-generic { background: #f1f5f9; color: #475569; }
+        body.dark-mode .fleet-syslog-role-generic { background: #1e293b; color: #94a3b8; }
+
         .settings-kpis {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2305,7 +2336,7 @@
         }
     </style>
 </head>
-<body>
+<body data-agent-insecure-tls="{{ '1' if (agent_install_trust_insecure_tls|default(false)) else '0' }}">
     <div id="startup-splash" class="startup-splash">
         <div class="startup-card">
             <div class="startup-logo"><i class="fas fa-shield-halved"></i></div>
@@ -2729,11 +2760,19 @@
                     <div class="card-body">
                         <div class="fleet-toolbar">
                             <input type="search" id="fleet-host-search" class="input-search" placeholder="Host ara…" autocomplete="off" style="min-width:200px; flex:1; max-width:320px;" aria-label="Host ara">
-                            <button type="button" class="btn btn-sm btn-secondary" id="agent-refresh-btn"><i class="fas fa-rotate"></i> Yenile</button>
+                            <button type="button" class="btn btn-sm btn-secondary" id="agent-refresh-btn" title="Graylog sayıları + token listesi"><i class="fas fa-rotate"></i> Yenile</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="agent-fleet-repair-btn" title="nodes.json dosyasını enrollment (aktif token + activatedNode) ile hizalar"><i class="fas fa-database"></i> Disk eşitle</button>
                         </div>
+                        <p class="help-text" style="margin:0 0 0.35rem 0; font-size:0.82rem;">Liste boşsa: <strong>Operatör</strong> rolüyle giriş yapın; kurulumdan sonra <strong>Yenile</strong>. Hâlâ yoksa <strong>Disk eşitle</strong> (token kaydından uç satırı yazar). TLS / sertifika özeti için <strong>Ayarlar</strong> sekmesi.</p>
+                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Kopuk veya hayalet satır: satıra tıklayıp açılan pencerede <strong>Listeden kaldır</strong> — panel ve <code>nodes.json</code> temizlenir; token kalır (ajan yeniden bağlanırsa satır dönebilir; kalıcı iptal için token iptali).</p>
+                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;"><strong>Panel «Güncel»</strong> yalnızca panele gelen <em>heartbeat</em>’i gösterir. <strong>24 saat / 7 gün</strong> sütunları Graylog’taki mesaj sayısıdır; «—» ise o sürede eşleşen log yok veya Graylog sorgusu hata verdi (hücre üzerine gelin). Doğrudan doğrulama: Graylog aramasında <code>host:MAKINE_ADI</code> veya <code>source:MAKINE_ADI</code>.</p>
+                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;"><strong>Syslog-only cihazlar</strong> (vCenter, firewall) token/aktivasyon yapmadığı için üstteki «Kayıtlı uç noktalar» listesine <em>otomatik satır eklenmez</em>; loglar doğrudan Graylog’a gider. Özet için aşağıdaki Graylog özeti kullanılır.</p>
                         <div id="agent-heartbeat-summary" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
                         <div id="agent-node-summary" class="settings-summary" style="margin-bottom:0.55rem;">—</div>
                         <div id="fleet-hosts-table" class="help-text">Yükleniyor…</div>
+                        <h5 style="margin:1rem 0 0.35rem 0; font-size:0.95rem;">Syslog / kayıtlı ağ görünürlüğü (Graylog)</h5>
+                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Son 7 gün, <code>log_type:network</code>. <strong>Önce transport IP</strong> (çoğu saha: vCenter); başlığa tıklayınca o IP’den gelen servis (<code>source</code>) dağılımı; servis satırına tıklayınca örnek loglar. <code>source</code> tek fiziksel kutu değildir. İstemci adresi için <code>syslog_sender_ip</code> önceliklidir.</p>
+                        <div id="fleet-syslog-sources" class="help-text">—</div>
                     </div>
                 </div>
 
@@ -2743,7 +2782,7 @@
                         <span class="badge badge-success">Sihirbaz · gelişmiş</span>
                     </div>
                     <div class="card-body">
-                        <p class="help-text" style="margin-top:0;">Profil → tek token → tek kurulum bağlantısı (<code>.sh</code> Linux, <code>.ps1</code> Windows). Farklı işletim sistemi için uygun profille yeni token alın. Token için <strong>admin</strong>.</p>
+                        <p class="help-text" style="margin-top:0;">Profil → tek token → tek kurulum bağlantısı (<code>.sh</code> Linux, <code>.ps1</code> Windows). Fluent Bit ajanı: merkeze <strong>UDP 5151 JSON</strong>. vCenter / firewall syslog: aynı merkez IP’de <strong>UDP veya TCP 1514</strong> (ekstra relay isteğe bağlı). Token için <strong>admin</strong>.</p>
                         <div class="agent-fleet-mode-switch" role="tablist" aria-label="Kurulum görünümü">
                             <button type="button" class="btn btn-sm btn-primary agent-fleet-mode-btn active" id="agent-fleet-mode-wizard" data-mode="wizard" role="tab" aria-selected="true">Sihirbaz</button>
                             <button type="button" class="btn btn-sm btn-secondary agent-fleet-mode-btn" id="agent-fleet-mode-advanced" data-mode="advanced" role="tab" aria-selected="false">Gelişmiş</button>
@@ -2764,7 +2803,7 @@
 
                                 <div id="onboarding-step-2" class="onboarding-step">
                                     <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bu makinede ajan kurulumu mümkün mü?</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Windows seçtiyseniz: kurabiliyorsanız «Evet». Yalnızca Linux + «Hayır» → syslog relay.</p>
+                                    <p class="help-text" style="margin:0.35rem 0;">Windows: kurabiliyorsanız «Evet». «Hayır» veya ağ cihazı: syslog — çoğu zaman doğrudan merkez <strong>1514</strong>; istenirse ayrı Linux’ta relay token’ı.</p>
                                     <div class="onboarding-scenario-grid">
                                         <button type="button" class="onboarding-scenario-btn" data-can-install="yes">Evet</button>
                                         <button type="button" class="onboarding-scenario-btn" data-can-install="no">Hayır / yalnızca syslog</button>
@@ -2772,12 +2811,21 @@
                                 </div>
 
                                 <div id="onboarding-step-3" class="onboarding-step">
-                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Merkez adresi (ingest)</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">UDP hedefi; genelde panele eriştiğiniz adres.</p>
+                                    <strong id="onboarding-step-3-title" class="help-text" style="display:block; margin-bottom:0.35rem;">Merkez adresi</strong>
+                                    <p id="onboarding-step-3-lead" class="help-text" style="margin:0.35rem 0;">Yükleniyor…</p>
+                                    <div id="onboarding-step-3-syslog-banner" class="help-text" style="margin:0.5rem 0; padding:0.55rem 0.65rem; border-radius:6px; border:1px solid var(--border-color, rgba(255,255,255,0.12)); background:var(--card-subtle-bg, rgba(0,0,0,0.06)); font-size:0.82rem; line-height:1.5;">
+                                        <strong>Syslog / vCenter / firewall:</strong> aynı merkez IP’sine <strong>UDP <span id="onboarding-wizard-syslog-port-udp">1514</span></strong> veya <strong>TCP <span id="onboarding-wizard-syslog-port-tcp">1514</span></strong> (şifresiz; TLS bu girişte yok).<br>
+                                        <span style="opacity:0.95;">Fluent Bit Linux/Windows <em>ajanının</em> merkeze JSON gönderdiği UDP portu ayrıdır (varsayılan <strong><span id="onboarding-step-3-json-hint">5151</span></strong>) — aşağıdaki sayı kutusu syslog içindir değil, ajan içindir.</span>
+                                    </div>
+                                    <p class="help-text" style="margin:0.35rem 0 0.2rem 0; font-weight:600;">Merkez IP veya hostname</p>
                                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
                                         <input id="onboarding-wizard-ingest-host" class="input-search" type="text" placeholder="örn. 10.0.0.5" style="min-width:220px;">
-                                        <input id="onboarding-wizard-ingest-port" class="input-search" type="number" min="1" max="65535" value="5151" style="max-width:100px;">
                                     </div>
+                                    <p class="help-text" style="margin:0.55rem 0 0.2rem 0;"><label id="onboarding-wizard-ingest-port-label" for="onboarding-wizard-ingest-port" style="font-weight:600; cursor:pointer;">Fluent Bit ajanı → merkez UDP (JSON)</label></p>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                                        <input id="onboarding-wizard-ingest-port" class="input-search" type="number" min="1" max="65535" value="5151" style="max-width:100px;" aria-describedby="onboarding-step-3-syslog-banner">
+                                    </div>
+                                    <div id="onboarding-wizard-ingest-hints" class="help-text" style="margin-top:0.45rem; padding:0.45rem 0.55rem; border-radius:6px; background:var(--card-subtle-bg, rgba(0,0,0,0.04)); font-size:0.78rem; line-height:1.45;">Yükleniyor…</div>
                                 </div>
 
                                 <div id="onboarding-step-4" class="onboarding-step">
@@ -2789,7 +2837,7 @@
 
                                 <div id="onboarding-step-5" class="onboarding-step">
                                     <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bağlantı testi</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Kurulum URL’si değil; yalnızca UDP testi. Graylog’da son 15 dk aranır.</p>
+                                    <p class="help-text" style="margin:0.35rem 0;">Kurulum URL’si değil; yalnızca <strong>ajan UDP (JSON)</strong> portuna test paketi (varsayılan 5151). Syslog 1514 ile bu adımda test edilmez; cihazda hedef IP+1514 ayarını doğrulayın.</p>
                                     <p class="settings-summary" id="onboarding-wizard-probe-label" style="font-family:monospace;font-size:0.8rem;">—</p>
                                     <div style="margin:0.35rem 0; font-size:0.85rem; font-weight:600;">Linux / macOS</div>
                                     <textarea id="onboarding-wizard-linux-cmd" class="input-search" readonly rows="2" style="width:100%;font-family:monospace;font-size:0.8rem;"></textarea>
@@ -2811,7 +2859,7 @@
                         </div>
 
                         <div id="agent-fleet-panel-advanced" class="agent-fleet-panel" style="display: none;">
-                                <p class="help-text" style="margin-top:0;">Relay: <code>syslog-relay-v1</code>. TLS için ingest önünde ters vekil.</p>
+                                <p class="help-text" style="margin-top:0;"><code>syslog-relay-v1</code> isteğe bağlı ayrı Linux toplayıcıdır. Doğrudan merkez: syslog <strong>1514</strong> UDP/TCP (TLS bu girişte yok). Graylog saat: <strong>Europe/Istanbul</strong>; GELF olay zamanı Unix epoch.</p>
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
                                     <select id="agent-profile-select" class="select-input" style="min-width: 280px; flex:1;"></select>
                                     <input id="agent-ingest-host" class="input-search" type="text" placeholder="Ingest host (boş → otomatik)">
@@ -3270,8 +3318,9 @@
                             <span class="badge badge-info" id="obs-ingest-badge">-</span>
                         </div>
                         <div class="card-body">
-                            <p class="help-text">Fluent Bit UDP input kayıt sayısı</p>
+                            <p class="help-text">Fluent Bit: tüm UDP girişleri toplam kayıt (Prometheus). Graylog ile bire bir değildir.</p>
                             <div id="obs-ingest-value" style="font-size:1.5rem; font-weight:600;">-</div>
+                            <p id="obs-ingest-note" class="help-text" style="display:none;margin-top:0.35rem;font-size:0.78rem;"></p>
                         </div>
                     </div>
                     <div class="card">
@@ -3513,6 +3562,18 @@
         </div>
     </div>
 
+    <div id="fleet-syslog-drilldown-modal" class="modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="fleet-syslog-drilldown-modal-title">
+        <div class="modal-content" style="max-width:720px;">
+            <div class="modal-header">
+                <h3 id="fleet-syslog-drilldown-modal-title">Syslog detayı</h3>
+                <button type="button" class="modal-close" onclick="closeFleetSyslogDrilldownModal()" aria-label="Kapat">&times;</button>
+            </div>
+            <div class="modal-body" id="fleet-syslog-drilldown-modal-body">
+                <p class="loading">Yükleniyor…</p>
+            </div>
+        </div>
+    </div>
+
     <div id="change-summary-modal" class="modal" style="display:none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -3598,7 +3659,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="{{ url_for('static', filename='js/dashboard-utils.js', v='20260226-2') }}"></script>
-    <script src="{{ url_for('static', filename='js/dashboard.js', v='20260226-2') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard-utils.js', v='20260416-2') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js', v='20260416-2') }}"></script>
 </body>
 </html>

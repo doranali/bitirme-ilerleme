@@ -36,10 +36,15 @@ let agentNodes = [];
 /** @type {string} */
 let fleetHostSearchQuery = '';
 let fleetHostsTableDelegated = false;
+/** Son yüklenen syslog özeti (hiyerarşi + drilldown sorguları). */
+let fleetSyslogSummaryCache = null;
+let fleetSyslogSourcesDelegated = false;
 let agentOnboardingHistory = [];
 let onboardingWizardStep = 1;
 let onboardingSelfTestProbe = '';
 const onboardingWizardState = { scenario: null, canInstall: null };
+/** Merkez portları — /api/agent/default-ingest yanıtı ile doldurulur (UI’da 5151 vs 1514 ayrımı). */
+let onboardingDefaultPorts = { ingestPort: 5151, syslogUdpPort: 1514, syslogTcpPort: 1514 };
 let guidedSettings = [];
 let guidedSettingsDraftValues = {};
 let activeSettingsGroup = 'all';
@@ -735,6 +740,10 @@ function setupEventListeners() {
     const agentRefreshBtn = document.getElementById('agent-refresh-btn');
     if (agentRefreshBtn) {
         agentRefreshBtn.addEventListener('click', loadAgentFleetData);
+    }
+    const agentFleetRepairBtn = document.getElementById('agent-fleet-repair-btn');
+    if (agentFleetRepairBtn) {
+        agentFleetRepairBtn.addEventListener('click', repairAgentFleetNodesFromTokens);
     }
     const fleetHostSearch = document.getElementById('fleet-host-search');
     if (fleetHostSearch) {
@@ -2139,6 +2148,8 @@ function renderFleetHostsTable() {
     const rows = filtered.map((node) => {
         const host = node.hostname || 'unknown-host';
         const enc = encodeURIComponent(host);
+        const kind = fleetInventoryKindLabel(node);
+        const kindHtml = `<span class="badge ${escapeHtml(kind.cls)}">${escapeHtml(kind.label)}</span>`;
         const profile = escapeHtml(node.profileId || '—');
         const ip = escapeHtml(node.lastSeenIp || '—');
         const seen = node.lastSeenAt ? formatRelativeTime(node.lastSeenAt) : '—';
@@ -2149,30 +2160,36 @@ function renderFleetHostsTable() {
             : (level === 'success' ? 'Güncel' : (level === 'warning' ? 'Gecikmiş' : (level === 'danger' ? 'Kopuk' : '—')));
         const c24 = formatFleetLogCount(node.logCount24h);
         const c7 = formatFleetLogCount(node.logCount7d);
-        const gHint = (node.graylogError24h || node.graylogError7d)
-            ? '<span class="help-text" title="Graylog sorgusu tamamlanamadı">*</span>'
+        const err24 = node.graylogError24h ? String(node.graylogError24h) : '';
+        const err7 = node.graylogError7d ? String(node.graylogError7d) : '';
+        const gHint = (err24 || err7)
+            ? '<span class="help-text" title="Graylog sorgusu hata veya indeks yok; hücre ipucuna bakın">*</span>'
             : '';
+        const t24 = err24 ? ` title="${escapeHtml(err24)}"` : '';
+        const t7 = err7 ? ` title="${escapeHtml(err7)}"` : '';
         return `
             <tr class="fleet-host-row" tabindex="0" data-host="${enc}" title="Ayrıntı">
                 <td><strong>${escapeHtml(host)}</strong></td>
+                <td>${kindHtml}</td>
                 <td>${profile}</td>
                 <td>${ip}</td>
                 <td>${escapeHtml(seen)}</td>
                 <td><span class="status-badge status-${level}">${badge}</span></td>
-                <td class="fleet-num">${c24}</td>
-                <td class="fleet-num">${c7}${gHint}</td>
+                <td class="fleet-num"${t24}>${c24}</td>
+                <td class="fleet-num"${t7}>${c7}${gHint}</td>
             </tr>
         `;
     }).join('');
 
     container.innerHTML = `
-        <p class="help-text" style="margin:0 0 0.5rem 0;">Satıra tıklayın: özet ve son mesajlar. «Panel bildirimi» ile Graylog sayıları farklı olabilir.</p>
+        <p class="help-text" style="margin:0 0 0.5rem 0;">Satıra tıklayın: özet ve son mesajlar. «Son panel IP» = HTTP ile panele/activate/heartbeat; UDP log kaynağı IP’si değildir.</p>
         <div class="fleet-hosts-table-wrap">
         <table class="fleet-data-table">
             <thead><tr>
                 <th>Host</th>
+                <th>Tür</th>
                 <th>Profil</th>
-                <th>IP</th>
+                <th>Son panel IP</th>
                 <th>Son bildirim</th>
                 <th>Panel</th>
                 <th class="fleet-num">24 saat</th>
@@ -2195,33 +2212,64 @@ async function openFleetHostModal(hostname) {
     try {
         const d = await apiRequest(`/api/agent/fleet-host-detail?hostname=${encodeURIComponent(hostname)}`);
         const node = d.node || {};
+        if (!d.node) {
+            body.innerHTML = `<p class="help-text">Bu ada ait görünür envanter satırı yok (silinmiş, gizlenmiş veya Graylog eşleşmesi farklı olabilir).</p>
+                <div style="margin-top:0.55rem;"><button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetHostModal()">Kapat</button></div>`;
+            return;
+        }
         const g = d.graylog || {};
         const samples = Array.isArray(g.samples) ? g.samples : [];
         const life = String(node.agentLifecycle || '');
         const unLine = life === 'uninstalled'
             ? `<dt class="help-text">Kaldırma</dt><dd>${escapeHtml(node.uninstalledAt || '—')} — ${escapeHtml(node.uninstallReason || 'user_uninstall')}</dd>`
             : '';
-        const meta = `
+        const relayNote =
+            String(node.profileId || '') === 'syslog-relay-v1'
+                ? '<p class="help-text" style="margin:0 0 0.65rem 0;font-size:0.82rem;">Bu satır <strong>token ile kurulan syslog relay</strong> içindir. Doğrudan merkeze syslog basan <strong>vCenter / firewall</strong> çoğu kurulumda ayrı token kullanmaz; özet için üstteki <strong>Syslog / kayıtlı ağ görünürlüğü</strong> bölümündeki transport IP kartlarına bakın.</p>'
+                : '';
+        const meta = `${relayNote}
             <dl style="margin:0 0 0.75rem 0; display:grid; gap:0.35rem 1rem; grid-template-columns:auto 1fr; font-size:0.88rem;">
+                <dt class="help-text">Tür</dt><dd>${escapeHtml(fleetInventoryKindLabel(node).label)}</dd>
                 <dt class="help-text">Profil</dt><dd>${escapeHtml(node.profileId || '—')}</dd>
-                <dt class="help-text">IP</dt><dd>${escapeHtml(node.lastSeenIp || '—')}</dd>
+                <dt class="help-text">Son panel IP</dt><dd>${escapeHtml(node.lastSeenIp || '—')}</dd>
                 <dt class="help-text">Son panel bildirimi</dt><dd>${node.lastSeenAt ? escapeHtml(formatRelativeTime(node.lastSeenAt)) : '—'}</dd>
                 ${unLine}
                 <dt class="help-text">Graylog (7 gün)</dt><dd>${formatFleetLogCount(g.total7d)}${g.error ? ` <span class="help-text">(${escapeHtml(g.error)})</span>` : ''}</dd>
             </dl>`;
-        const logRows = samples.length
-            ? samples.map((s) => {
+        const emptySamplesButCount =
+            !samples.length &&
+            g.total7d != null &&
+            Number(g.total7d) > 0;
+        let logRows;
+        if (samples.length) {
+            logRows = samples.map((s) => {
                 const ts = escapeHtml(String(s.timestamp || '—'));
                 const src = escapeHtml(String(s.source || ''));
                 const msg = escapeHtml(String(s.message || '').slice(0, 400));
                 return `<tr><td style="white-space:nowrap; font-size:0.8rem;" class="help-text">${ts}</td><td style="font-size:0.82rem;"><span class="help-text">${src}</span><br>${msg}</td></tr>`;
-            }).join('')
-            : '<tr><td colspan="2" class="help-text">Örnek yok veya Graylog yanıt vermedi.</td></tr>';
+            }).join('');
+        } else if (emptySamplesButCount) {
+            logRows = '<tr><td colspan="2" class="help-text">Graylog bu host için sayım gösteriyor ancak örnek satırlar API’de dönmedi. Graylog’ta arama ile doğrulayın; sorun sürerse panel/graylog sürümü bildirin.</td></tr>';
+        } else {
+            logRows = '<tr><td colspan="2" class="help-text">Örnek yok veya Graylog yanıt vermedi.</td></tr>';
+        }
+        const tokenId = node.tokenId != null && String(node.tokenId).trim() ? String(node.tokenId).trim() : '';
         body.innerHTML = `${meta}
             <div style="font-weight:600; margin-bottom:0.35rem; font-size:0.9rem;">Son kayıtlar (en fazla 10)</div>
             <div style="overflow-x:auto; max-height:280px; overflow-y:auto; border:1px solid var(--color-border); border-radius:0.35rem;">
             <table class="fleet-data-table" style="font-size:0.82rem;"><tbody>${logRows}</tbody></table>
+            </div>
+            <p class="help-text" style="margin:0.65rem 0 0 0; font-size:0.78rem;">Listeden kaldırma yalnızca panel görünümünü ve diskteki <code>nodes.json</code> satırını temizler; enrollment token silinmez. Ajan tekrar heartbeat gönderirse satır yeniden görünebilir — o zaman tokenı iptal edin veya yeniden gizleyin.</p>
+            <div style="margin-top:0.55rem; display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetHostModal()">Kapat</button>
+                <button type="button" class="btn btn-outline-warning btn-sm" id="fleet-host-hide-from-list-btn">Listeden kaldır…</button>
             </div>`;
+        const hideBtn = document.getElementById('fleet-host-hide-from-list-btn');
+        if (hideBtn) {
+            hideBtn.addEventListener('click', () => {
+                void hideFleetNodeFromListModal(hostname, tokenId);
+            });
+        }
     } catch (err) {
         body.innerHTML = `<p class="loading">Hata: ${escapeHtml(err.message)}</p>`;
     }
@@ -2230,6 +2278,36 @@ async function openFleetHostModal(hostname) {
 function closeFleetHostModal() {
     const modal = document.getElementById('fleet-host-modal');
     if (modal) modal.style.display = 'none';
+}
+
+async function hideFleetNodeFromListModal(hostname, tokenId) {
+    if (!hasAtLeastRole('operator')) {
+        showAlert('Operatör rolü gerekli', 'warning');
+        return;
+    }
+    const hn = String(hostname || '').trim();
+    if (!hn) return;
+    const ok = await confirmDangerousAction({
+        message: 'Bu uç noktayı envanter listesinden kaldırmak istiyor musunuz?',
+        detail: 'Enrollment token silinmez. Ajan yeniden bağlanırsa satır tekrar görünebilir. Kalıcı iptal için Ayarlar’dan token iptali kullanın.'
+    });
+    if (!ok) return;
+    const payload = {};
+    if (tokenId) payload.tokenId = tokenId;
+    else payload.hostname = hn;
+    try {
+        await apiRequest('/api/agent/fleet-node/hide-from-list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        closeFleetHostModal();
+        await loadAgentFleetData();
+        showAlert('Kayıt listeden kaldırıldı', 'success');
+    } catch (err) {
+        const msg = err && err.message ? String(err.message) : String(err);
+        showAlert(`Listeden kaldırılamadı: ${msg}`, 'danger');
+    }
 }
 
 function formatEnrollmentStatusTr(code) {
@@ -2381,11 +2459,83 @@ async function initOnboardingWizard() {
     if (res) res.textContent = 'Henüz kontrol edilmedi.';
     try {
         const d = await apiRequest('/api/agent/default-ingest');
+        onboardingDefaultPorts = {
+            ingestPort: Number(d.ingestPort) || 5151,
+            syslogUdpPort: Number(d.syslogUdpPort) || 1514,
+            syslogTcpPort: Number(d.syslogTcpPort) || 1514,
+        };
         const h = document.getElementById('onboarding-wizard-ingest-host');
         const p = document.getElementById('onboarding-wizard-ingest-port');
         if (h && !h.value.trim()) h.value = d.ingestHost || '';
         if (p && d.ingestPort) p.value = String(d.ingestPort);
-    } catch (_) { /* ignore */ }
+        const hintBox = document.getElementById('onboarding-wizard-ingest-hints');
+        if (hintBox) {
+            const tz = escapeHtml(String(d.operationsTimezone || 'Europe/Istanbul'));
+            const ih = d.ingestHints || {};
+            const parts = [
+                `<strong>Standart</strong> — Operasyon ve Graylog zamanı: <code>${tz}</code>. GELF olay zamanı Unix epoch; arayüz bu TZ ile gösterilir.`,
+                `Graylog kullanıcı profilinde <strong>Time zone = ${tz}</strong> seçin (admin ile farklı görünmesin).`,
+            ];
+            if (ih.message) parts.push(`<code>message</code>: ${escapeHtml(String(ih.message))}`);
+            if (ih.host) parts.push(`<code>host</code>: ${escapeHtml(String(ih.host))}`);
+            if (ih.time) parts.push(`<code>date</code> / zaman: ${escapeHtml(String(ih.time))}`);
+            if (ih.syslog) parts.push(escapeHtml(String(ih.syslog)));
+            hintBox.innerHTML = parts.map((x) => `<span style="display:block;margin-top:0.25rem;">${x}</span>`).join('');
+        }
+    } catch (_) {
+        const hintBox = document.getElementById('onboarding-wizard-ingest-hints');
+        if (hintBox) {
+            hintBox.innerHTML = '<span><strong>Graylog</strong> — Profil → Time zone: <code>Europe/Istanbul</code>. GELF olay zamanı Unix epoch.</span>';
+        }
+    }
+    updateOnboardingStep3UI();
+}
+
+/**
+ * Sihirbaz adım 3: 5151 (Fluent Bit JSON ajanı) ile 1514 (doğrudan syslog) aynı IP’de farklıdır — tek kutuda 5151 görününce syslog yanlış anlaşılmasın.
+ */
+function updateOnboardingStep3UI() {
+    const title = document.getElementById('onboarding-step-3-title');
+    const lead = document.getElementById('onboarding-step-3-lead');
+    const banner = document.getElementById('onboarding-step-3-syslog-banner');
+    const portLabel = document.getElementById('onboarding-wizard-ingest-port-label');
+    const udpEl = document.getElementById('onboarding-wizard-syslog-port-udp');
+    const tcpEl = document.getElementById('onboarding-wizard-syslog-port-tcp');
+    const jsonHint = document.getElementById('onboarding-step-3-json-hint');
+    const su = Number(onboardingDefaultPorts.syslogUdpPort) || 1514;
+    const st = Number(onboardingDefaultPorts.syslogTcpPort) || 1514;
+    const jp = Number(onboardingDefaultPorts.ingestPort) || 5151;
+    if (udpEl) udpEl.textContent = String(su);
+    if (tcpEl) tcpEl.textContent = String(st);
+    if (jsonHint) jsonHint.textContent = String(jp);
+
+    const sc = onboardingWizardState.scenario;
+    const ci = onboardingWizardState.canInstall;
+    const syslogHeavy = ci === 'no' || sc === 'network_device';
+    const windowsAgent = sc === 'windows_server' && ci === 'yes';
+
+    if (banner) {
+        banner.style.display = windowsAgent ? 'none' : 'block';
+    }
+    if (!title || !lead) return;
+
+    if (windowsAgent) {
+        title.textContent = 'Merkez adresi (Windows Fluent Bit ajanı)';
+        lead.textContent =
+            `Windows ajanı logları merkeze JSON ile UDP üzerinden gönderir; varsayılan port genelde ${jp}. Syslog cihazları içinse aynı merkez IP’de UDP/TCP ${su} kullanılır (ajan kurulumu değil).`;
+    } else if (syslogHeavy) {
+        title.textContent = 'Merkez adresi — syslog (1514) ve isteğe bağlı ajan (5151)';
+        lead.textContent = `vCenter / firewall / syslog: cihazda hedef olarak aynı IP ve UDP veya TCP ${su} (TLS bu girişte yok). Aşağıdaki sayı kutusu yalnızca Fluent Bit’in merkeze JSON gönderdiği UDP portudur (varsayılan ${jp}); syslog ile karıştırmayın.`;
+    } else {
+        title.textContent = 'Merkez adresi (Fluent Bit ajanı + syslog bilgisi)';
+        lead.textContent = `Linux ajanı merkeze JSON için UDP ${jp} kullanır (kutu). Doğrudan syslog gönderen cihazlar aynı IP’de UDP ${su} veya TCP ${st}.`;
+    }
+
+    if (portLabel) {
+        portLabel.textContent = windowsAgent
+            ? 'Windows ajan → merkez UDP (JSON)'
+            : 'Fluent Bit ajanı → merkez UDP (JSON; syslog değil)';
+    }
 }
 
 function showOnboardingWizardStep(n) {
@@ -2395,6 +2545,9 @@ function showOnboardingWizardStep(n) {
     for (let i = 1; i <= 5; i++) {
         const el = document.getElementById(`onboarding-step-${i}`);
         if (el) el.classList.toggle('active', i === onboardingWizardStep);
+    }
+    if (onboardingWizardStep === 3) {
+        updateOnboardingStep3UI();
     }
     if (onboardingWizardStep === 5) {
         void loadOnboardingSelfTestInstructions(false);
@@ -2621,20 +2774,30 @@ function buildAgentInstallCommand(installUrl) {
     return buildAgentInstallCommandBash(installUrl);
 }
 
-function buildAgentInstallCommandWindows(installUrlPs1) {
+function _windowsAgentTlsPreamble(trustInsecure) {
+    const tls12 = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\n";
+    const insecure = trustInsecure
+        ? "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n"
+        : '';
+    return tls12 + insecure;
+}
+
+function buildAgentInstallCommandWindows(installUrlPs1, trustInsecure) {
     const u = String(installUrlPs1 || '').trim();
     if (!u) return '';
     const esc = u.replace(/'/g, "''");
-    return `$url = '${esc}'
+    const pre = _windowsAgentTlsPreamble(!!trustInsecure);
+    return `${pre}$url = '${esc}'
 Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\\LogPlatformAgentInstall.ps1" -UseBasicParsing
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\LogPlatformAgentInstall.ps1"`;
 }
 
-function buildAgentUninstallCommandWindows(uninstallUrlPs1) {
+function buildAgentUninstallCommandWindows(uninstallUrlPs1, trustInsecure) {
     const u = String(uninstallUrlPs1 || '').trim();
     if (!u) return '';
     const esc = u.replace(/'/g, "''");
-    return `$url = '${esc}'
+    const pre = _windowsAgentTlsPreamble(!!trustInsecure);
+    return `${pre}$url = '${esc}'
 Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\\LogPlatformAgentUninstall.ps1" -UseBasicParsing
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\LogPlatformAgentUninstall.ps1"`;
 }
@@ -2658,14 +2821,21 @@ function applyAgentInstallCommandsFromResponse(data) {
 
     if (urlEl) urlEl.value = primary;
 
+    const trustTls =
+        !!data.trustInsecurePanelTls ||
+        (typeof document !== 'undefined' &&
+            document.body &&
+            document.body.dataset &&
+            document.body.dataset.agentInsecureTls === '1');
+
     if (kind === 'powershell') {
         if (rowBash) rowBash.style.display = 'none';
         if (rowWin) rowWin.style.display = 'flex';
         if (bashEl) bashEl.value = '';
-        if (winTa) winTa.value = buildAgentInstallCommandWindows(urlPs || primary);
+        if (winTa) winTa.value = buildAgentInstallCommandWindows(urlPs || primary, trustTls);
         if (rowUn) rowUn.style.display = urlUn ? 'flex' : 'none';
         if (urlUnEl) urlUnEl.value = urlUn;
-        if (winUnTa) winUnTa.value = urlUn ? buildAgentUninstallCommandWindows(urlUn) : '';
+        if (winUnTa) winUnTa.value = urlUn ? buildAgentUninstallCommandWindows(urlUn, trustTls) : '';
         if (hint) {
             hint.textContent = 'Bu token yalnızca Windows içindir. Üstteki adres .ps1 biter; Linux’ta çalışmaz. Komutu hedef Windows’ta Yönetici PowerShell ile çalıştırın (Fluent Bit indirilir, servis kurulur). Kaldırma: aynı token ile alttaki «Kaldırma» bağlantısı — çalışınca panele audit kaydı düşer. Linux için panelde «Linux Agent» veya «Syslog Relay» ile yeni token alın.';
         }
@@ -2679,7 +2849,13 @@ function applyAgentInstallCommandsFromResponse(data) {
         const shUrl = String(data.installUrlSh || '').trim() || primary;
         if (bashEl) bashEl.value = buildAgentInstallCommandBash(shUrl);
         if (hint) {
-            hint.textContent = 'Bu token Linux veya syslog relay içindir. Üstteki adres .sh biter; Windows’ta çalışmaz. Komutu hedef Linux’ta root veya sudo ile çalıştırın. Windows kurulumu için panelde «Windows Agent» profiliyle ayrı token üretin.';
+            const rec = data.record || {};
+            const pid = String(rec.profileId || rec.profile_id || '');
+            if (pid === 'syslog-relay-v1') {
+                hint.textContent = 'Bu betik isteğe bağlı syslog relay kurar (ayrı Linux toplayıcı). vCenter/firewall doğrudan merkez IP’nin 1514 UDP/TCP portuna da syslog gönderebilir; relay zorunlu değil. Üstteki adres .sh biter; Windows’ta çalışmaz.';
+            } else {
+                hint.textContent = 'Bu token Linux Fluent Bit ajanı içindir (JSON → UDP 5151). Üstteki adres .sh biter; Windows’ta çalışmaz. Windows için «Windows Agent» profiliyle ayrı token alın.';
+            }
         }
     }
 }
@@ -2857,6 +3033,249 @@ async function mergeFleetGraylogOverview() {
     }
 }
 
+async function repairAgentFleetNodesFromTokens() {
+    if (!hasAtLeastRole('operator')) {
+        showAlert('Operatör veya admin rolü gerekir.', 'warning');
+        return;
+    }
+    try {
+        const data = await apiRequest('/api/agent/nodes/repair-from-tokens', { method: 'POST' });
+        showAlert(data.message || 'nodes.json güncellendi', 'success');
+        await loadAgentFleetData();
+    } catch (e) {
+        showAlert(`Disk eşitleme hatası: ${e.message}`, 'danger');
+    }
+}
+
+function fleetSyslogRoleBadgeClass(role) {
+    const r = String(role || '');
+    if (r === 'vcenter') return 'fleet-syslog-role-vcenter';
+    if (r === 'vmware') return 'fleet-syslog-role-vmware';
+    if (r === 'firewall') return 'fleet-syslog-role-firewall';
+    return 'fleet-syslog-role-generic';
+}
+
+function buildGraylogSearchUrl(webBase, query, rangeSec) {
+    const b = String(webBase || '').trim().replace(/\/+$/, '');
+    if (!b) return null;
+    const q = encodeURIComponent(String(query || ''));
+    const r = Math.max(60, parseInt(String(rangeSec || 604800), 10) || 604800);
+    return `${b}/search?q=${q}&rangetype=relative&relative=${r}`;
+}
+
+function ensureFleetSyslogSourcesDelegation() {
+    const root = document.getElementById('fleet-syslog-sources');
+    if (!root || fleetSyslogSourcesDelegated) return;
+    fleetSyslogSourcesDelegated = true;
+    root.addEventListener('click', (e) => {
+        const btnAll = e.target.closest('.fleet-syslog-open-emitter-samples');
+        if (btnAll) {
+            e.preventDefault();
+            e.stopPropagation();
+            const idx = parseInt(btnAll.getAttribute('data-emitter-idx') || '-1', 10);
+            void openFleetSyslogDrilldownModal(idx, null);
+            return;
+        }
+        const head = e.target.closest('.fleet-syslog-card-head');
+        if (head && !e.target.closest('a') && !e.target.closest('button')) {
+            const card = head.closest('.fleet-syslog-card');
+            const wrap = card && card.querySelector('.fleet-syslog-sources-wrap');
+            if (wrap) {
+                const open = !wrap.classList.contains('is-open');
+                wrap.classList.toggle('is-open', open);
+                head.classList.toggle('is-open', open);
+            }
+            return;
+        }
+        const srcRow = e.target.closest('tr.fleet-syslog-source-row');
+        if (srcRow) {
+            e.preventDefault();
+            const idx = parseInt(srcRow.getAttribute('data-emitter-idx') || '-1', 10);
+            const sidx = srcRow.getAttribute('data-source-idx');
+            if (idx < 0) return;
+            void openFleetSyslogDrilldownModal(idx, sidx === null || sidx === '' ? null : sidx);
+        }
+    });
+}
+
+function closeFleetSyslogDrilldownModal() {
+    const modal = document.getElementById('fleet-syslog-drilldown-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function openFleetSyslogDrilldownModal(emitterIdx, sourceIdx) {
+    const cache = fleetSyslogSummaryCache;
+    const emitters = cache && Array.isArray(cache.emitters) ? cache.emitters : [];
+    const em = emitters[emitterIdx];
+    const range = (cache && cache.rangeSeconds) || 604800;
+    const modal = document.getElementById('fleet-syslog-drilldown-modal');
+    const body = document.getElementById('fleet-syslog-drilldown-modal-body');
+    const title = document.getElementById('fleet-syslog-drilldown-modal-title');
+    if (!modal || !body) return;
+    let sourceName = '';
+    if (sourceIdx !== null && sourceIdx !== undefined && sourceIdx !== '') {
+        const si = parseInt(String(sourceIdx), 10);
+        const arr = em && Array.isArray(em.sources) ? em.sources : [];
+        if (!Number.isNaN(si) && arr[si]) sourceName = String(arr[si].name || '');
+    }
+    if (title) {
+        const ipLab = em && em.ip ? String(em.ip) : (em && em.noTransportIp ? 'Transport IP (örnekte yok)' : '—');
+        title.textContent = sourceName ? `${ipLab} · ${sourceName}` : `${ipLab} · tüm servisler`;
+    }
+    body.innerHTML = '<p class="loading">Örnekler yükleniyor…</p>';
+    modal.style.display = 'flex';
+    const qs = new URLSearchParams();
+    if (em && em.ip) qs.set('ip', String(em.ip));
+    else if (em && em.noTransportIp) qs.set('noIp', '1');
+    if (sourceName) qs.set('source', sourceName);
+    qs.set('range', String(range));
+    try {
+        const r = await apiRequest(`/api/ingest/syslog-drilldown?${qs.toString()}`);
+        const samples = Array.isArray(r.samples) ? r.samples : [];
+        const qStr = escapeHtml(String(r.query || ''));
+        const glBase = r.graylogWebBase || cache.graylogWebBase || '';
+        const glUrl = buildGraylogSearchUrl(glBase, r.query, range);
+        const glLink = glUrl
+            ? `<a href="${escapeHtml(glUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary" style="margin-top:0.35rem;">Graylog’ta aç</a>`
+            : '<span class="help-text" style="display:inline-block;margin-top:0.35rem;">GRAYLOG_WEB_URL tanımlı değil; sorguyu Graylog’ta elle yapıştırın.</span>';
+        const rows = samples.length
+            ? samples
+                .map((s) => {
+                    const ts = escapeHtml(String(s.timestamp || '—'));
+                    const src = escapeHtml(String(s.source || ''));
+                    const msg = escapeHtml(String(s.message || '').slice(0, 420));
+                    return `<tr><td style="white-space:nowrap;font-size:0.78rem;" class="help-text">${ts}</td><td style="font-size:0.82rem;"><span class="help-text">${src}</span><br>${msg}</td></tr>`;
+                })
+                .join('')
+            : '<tr><td colspan="2" class="help-text">Bu filtre için örnek dönmedi veya Graylog yanıtı boş.</td></tr>';
+        body.innerHTML = `
+            <p class="help-text" style="margin:0 0 0.45rem 0;font-size:0.82rem;">Sorgu:</p>
+            <pre style="font-size:0.75rem;overflow-x:auto;max-height:4.2rem;margin:0 0 0.5rem 0;padding:0.45rem;border:1px solid var(--color-border);border-radius:0.35rem;background:var(--color-light,#f8fafc);">${qStr}</pre>
+            ${glLink}
+            <div style="font-weight:600;margin:0.75rem 0 0.35rem;font-size:0.9rem;">Örnek mesajlar</div>
+            <div style="overflow-x:auto;max-height:320px;overflow-y:auto;border:1px solid var(--color-border);border-radius:0.35rem;">
+                <table class="fleet-data-table" style="font-size:0.82rem;"><tbody>${rows}</tbody></table>
+            </div>
+            <div style="margin-top:0.65rem;text-align:right;"><button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetSyslogDrilldownModal()">Kapat</button></div>`;
+    } catch (err) {
+        body.innerHTML = `<p class="help-text">Hata: ${escapeHtml(err.message || String(err))}</p>
+            <div style="margin-top:0.55rem;text-align:right;"><button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetSyslogDrilldownModal()">Kapat</button></div>`;
+    }
+}
+
+function fleetInventoryKindLabel(node) {
+    const p = String(node.profileId || '');
+    if (p === 'syslog-relay-v1') return { label: 'Syslog relay', cls: 'badge badge-info' };
+    return { label: 'Ajan', cls: 'badge badge-secondary' };
+}
+
+async function loadFleetSyslogSummary() {
+    const el = document.getElementById('fleet-syslog-sources');
+    if (!el) return;
+    if (!hasAtLeastRole('operator')) {
+        el.textContent = '';
+        return;
+    }
+    el.innerHTML = '<p class="help-text">Graylog syslog özeti yükleniyor…</p>';
+    try {
+        const d = await apiRequest('/api/ingest/syslog-sources-summary?range=604800');
+        fleetSyslogSummaryCache = { ...d, rangeSeconds: d.rangeSeconds || 604800 };
+        if (d.error) {
+            el.innerHTML = `<p class="help-text">Özet alınamadı: ${escapeHtml(String(d.error))}</p>`;
+            return;
+        }
+        const emitters = Array.isArray(d.emitters) ? d.emitters : [];
+        const rows = Array.isArray(d.senders) ? d.senders : [];
+        if (!emitters.length && !rows.length) {
+            el.innerHTML =
+                '<p class="help-text">Bu aralıkta <code>log_type:network</code> ile eşleşen örnek yok veya alanlar boş. vCenter’ın gönderdiği host/source alanını Graylog’da kontrol edin.</p>';
+            return;
+        }
+        const meta = escapeHtml(`Örneklenen satır: ${d.sampleRows || 0} (üst sınır 450)`);
+        const hint = d.ipHint
+            ? `<p class="help-text" style="margin-top:0.55rem;">${escapeHtml(String(d.ipHint))}</p>`
+            : '';
+
+        const emitterCards = emitters.length
+            ? `<div class="fleet-syslog-emitters">${emitters
+                .map((em, idx) => {
+                    const ipDisp = em.noTransportIp
+                        ? '<span class="help-text">— (örnekte transport IP yok)</span>'
+                        : `<code>${escapeHtml(String(em.ip || ''))}</code>`;
+                    const badge = `<span class="fleet-syslog-role-badge ${fleetSyslogRoleBadgeClass(em.role)}">${escapeHtml(String(em.title || ''))}</span>`;
+                    const cnt = Number(em.sampleCount) || 0;
+                    const dist = Number(em.distinctSources) || 0;
+                    const srcRows = (Array.isArray(em.sources) ? em.sources : [])
+                        .map((s, sidx) => {
+                            const n = escapeHtml(String(s.name || '—'));
+                            const c = Number(s.count) || 0;
+                            return `<tr class="fleet-syslog-source-row" data-emitter-idx="${idx}" data-source-idx="${sidx}"><td><strong>${n}</strong></td><td class="fleet-num">${c}</td></tr>`;
+                        })
+                        .join('');
+                    return `
+            <article class="fleet-syslog-card" data-emitter-idx="${idx}">
+                <div class="fleet-syslog-card-head" role="button" tabindex="0" aria-expanded="false" title="Servis listesini aç/kapat">
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem 0.5rem;">
+                        ${badge}
+                        <span style="font-weight:600;">${ipDisp}</span>
+                    </div>
+                    <div class="fleet-syslog-card-meta">
+                        <span>Örnek içi: <strong>${cnt}</strong></span>
+                        <span>Servis çeşidi: <strong>${dist}</strong></span>
+                        <button type="button" class="btn btn-sm btn-outline-primary fleet-syslog-open-emitter-samples" data-emitter-idx="${idx}">Tüm örnekler</button>
+                    </div>
+                </div>
+                <div class="fleet-syslog-sources-wrap">
+                    <p class="help-text" style="margin:0 0 0.35rem 0;font-size:0.78rem;">Servis satırına tıklayın: yalnızca o <code>source</code> için örnek loglar.</p>
+                    <div class="fleet-hosts-table-wrap">
+                        <table class="fleet-data-table"><thead><tr><th>Source / servis</th><th class="fleet-num">Örnek içinde</th></tr></thead><tbody>${srcRows || '<tr><td colspan="2" class="help-text">—</td></tr>'}</tbody></table>
+                    </div>
+                </div>
+            </article>`;
+                })
+                .join('')}</div>`
+            : '';
+
+        const lis = rows
+            .map((r) => {
+                const n = escapeHtml(String(r.name || '—'));
+                const c = Number(r.count) || 0;
+                return `<tr><td><strong>${n}</strong></td><td class="fleet-num">${c}</td></tr>`;
+            })
+            .join('');
+        const rem = Array.isArray(d.remoteSenders) ? d.remoteSenders : [];
+        const ipRows = rem
+            .map((r) => {
+                const n = escapeHtml(String(r.name || '—'));
+                const c = Number(r.count) || 0;
+                return `<tr><td><code>${n}</code></td><td class="fleet-num">${c}</td></tr>`;
+            })
+            .join('');
+        const ipBlock =
+            rem.length > 0
+                ? `<h6 style="margin:0.75rem 0 0.3rem 0;font-size:0.88rem;">Transport IP dağılımı (öncelik <code>syslog_sender_ip</code>)</h6>
+            <div class="fleet-hosts-table-wrap"><table class="fleet-data-table"><thead><tr><th>IP</th><th class="fleet-num">Örnek içinde</th></tr></thead><tbody>${ipRows}</tbody></table></div>`
+                : '';
+
+        const flatBlock =
+            rows.length > 0
+                ? `<details class="help-text" style="margin-top:0.65rem;font-size:0.82rem;max-width:52rem;">
+            <summary style="cursor:pointer;font-weight:600;">Tüm servisler (düz liste, mühendislik)</summary>
+            <div class="fleet-hosts-table-wrap" style="margin-top:0.35rem;"><table class="fleet-data-table"><thead><tr><th>Source / servis adı</th><th class="fleet-num">Örnek içinde</th></tr></thead><tbody>${lis}</tbody></table></div>
+            </details>`
+                : '';
+
+        el.innerHTML = `<p class="help-text" style="margin-bottom:0.35rem;">${meta}</p>
+            ${emitterCards}
+            ${ipBlock}
+            ${flatBlock}
+            ${hint}`;
+        ensureFleetSyslogSourcesDelegation();
+    } catch (e) {
+        el.innerHTML = `<p class="help-text">Hata: ${escapeHtml(e.message || String(e))}</p>`;
+    }
+}
+
 async function loadAgentFleetData() {
     await loadAgentProfiles();
     await Promise.all([
@@ -2868,6 +3287,7 @@ async function loadAgentFleetData() {
     renderAgentNodeSummary();
     renderAgentHeartbeatSummary();
     renderFleetHostsTable();
+    await loadFleetSyslogSummary();
     // Varsayılan ingest host'u otomatik doldur (boşsa)
     try {
         const def = await apiRequest('/api/agent/default-ingest');
@@ -3259,6 +3679,11 @@ async function loadObservabilityMetrics() {
             if (b) b.textContent = badge != null ? String(badge) : '-';
         };
         set('obs-ingest-value', data.ingestRecords, data.ingestRecords);
+        const ingestNote = document.getElementById('obs-ingest-note');
+        if (ingestNote) {
+            ingestNote.textContent = data.fluentBitMetricsNote || '';
+            ingestNote.style.display = data.fluentBitMetricsNote ? 'block' : 'none';
+        }
         set('obs-disk-value', data.diskUsagePercent != null ? data.diskUsagePercent + '%' : '-', data.diskUsagePercent != null ? data.diskUsagePercent + '%' : '-');
         set('obs-qc-value', data.qcStreamCount1h, data.qcStreamCount1h);
         set('obs-errors-value', data.outputErrors, data.outputErrors);
@@ -4481,7 +4906,7 @@ function updateServicesTable() {
                     <div class="services-action-buttons">
                         ${actionButtons.join('')}
                     </div>
-                    ${interfaceLinks.length ? `<div class="services-link-note">${interfaceLinks.slice(0, 2).map(link => `${link.label}: ${link.hostPort}`).join(' • ')}</div>` : '<div class="services-link-note">Arayüz portu yayınlanmamış</div>'}
+                    ${interfaceLinks.length ? `<div class="services-link-note">${interfaceLinks.slice(0, 2).map(link => `${link.label}: ${link.hostPort}`).join(' • ')}</div>` : `<div class="services-link-note">${String(name).toLowerCase().includes('grafana') ? 'Grafana için host’ta yayınlanmış TCP portu yok (iç ağda çalışıyor olabilir). Kısayol ve dış erişim için compose’a <code>3000:3000</code> veya repodaki <code>docker-compose.grafana-host.yml</code> ekleyin; NPM arkasındaysa bu uyarı normaldir.' : 'Arayüz portu yayınlanmamış'}</div>`}
                 </td>
             </tr>
         `;
@@ -4552,7 +4977,7 @@ function updateCriticalOverview() {
         const gl = ip.graylog || {};
         let value = '';
         if (ov === 'ok') {
-            value = 'Fluent Bit konteyneri çalışıyor, HTTP 2020 yanıtlı, Graylog API erişilebilir (ajan UDP 5151 → merkez).';
+            value = 'Fluent Bit çalışıyor, HTTP 2020 yanıtlı, Graylog API erişilebilir (ajan: UDP 5151 JSON; vCenter/firewall syslog: UDP/TCP 1514).';
         } else if (ov === 'degraded') {
             const parts = [
                 `FB: ${fb.containerRunning ? 'çalışıyor' : 'çalışmıyor'}`,
@@ -4566,7 +4991,7 @@ function updateCriticalOverview() {
                 : `Durum: ${ov}. fluent-bit ve graylog servislerini kontrol edin.${fb.detail ? ` (${fb.detail})` : ''}`;
         }
         entries.push({
-            title: 'Log toplama hattı (UDP → Fluent Bit → Graylog)',
+            title: 'Log toplama (5151 JSON + 1514 syslog → Fluent Bit → Graylog)',
             value,
             level: ov === 'ok' ? 'success' : (ov === 'degraded' ? 'warning' : 'danger'),
             action: 'Servisler sekmesi',

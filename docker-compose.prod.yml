@@ -1,0 +1,418 @@
+x-prod-logging: &prod-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-prod-default: &prod-default
+  <<: *prod-logging
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: 512M
+      reservations:
+        cpus: "0.10"
+        memory: 128M
+
+services:
+  # log-gen / sentetik trafik prod compose birleşiminde tanımsız (yalnızca docker-compose.synthetic-traffic.yml).
+
+  setup:
+    <<: *prod-default
+
+  mongodb:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test | grep -q 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
+
+  kafka1:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 2G
+        reservations:
+          cpus: "0.40"
+          memory: 512M
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_OPTS: -Duser.timezone=${TZ:-Europe/Istanbul}
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 20s
+      timeout: 8s
+      retries: 10
+      start_period: 35s
+
+  kafka2:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 2G
+        reservations:
+          cpus: "0.40"
+          memory: 512M
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_OPTS: -Duser.timezone=${TZ:-Europe/Istanbul}
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 20s
+      timeout: 8s
+      retries: 10
+      start_period: 35s
+
+  kafka3:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 2G
+        reservations:
+          cpus: "0.40"
+          memory: 512M
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_OPTS: -Duser.timezone=${TZ:-Europe/Istanbul}
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 20s
+      timeout: 8s
+      retries: 10
+      start_period: 35s
+
+  opensearch1:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 4G
+        reservations:
+          cpus: "0.75"
+          memory: 1G
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+      - cluster.name=${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}
+      - node.name=opensearch1
+      - discovery.seed_hosts=opensearch1,opensearch2,opensearch3
+      - cluster.initial_cluster_manager_nodes=opensearch1,opensearch2,opensearch3
+      - node.roles=cluster_manager,data,ingest
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+      - plugins.security.disabled=false
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g -Duser.timezone=${TZ:-Europe/Istanbul}
+      - network.host=0.0.0.0
+      - http.port=9200
+      - transport.port=9300
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sfk -u \"admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD\" https://127.0.0.1:9200/_cluster/health | grep -q '\"status\"' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
+
+  opensearch2:
+    <<: *prod-logging
+    profiles: []
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 4G
+        reservations:
+          cpus: "0.75"
+          memory: 1G
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+      - cluster.name=${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}
+      - node.name=opensearch2
+      - discovery.seed_hosts=opensearch1,opensearch2,opensearch3
+      - cluster.initial_cluster_manager_nodes=opensearch1,opensearch2,opensearch3
+      - node.roles=cluster_manager,data,ingest
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+      - plugins.security.disabled=false
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g -Duser.timezone=${TZ:-Europe/Istanbul}
+      - network.host=0.0.0.0
+      - http.port=9200
+      - transport.port=9300
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sfk -u \"admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD\" https://127.0.0.1:9200/_cluster/health | grep -q '\"status\"' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
+
+  opensearch3:
+    <<: *prod-logging
+    profiles: []
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 4G
+        reservations:
+          cpus: "0.75"
+          memory: 1G
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+      - cluster.name=${OPENSEARCH_CLUSTER_NAME:-opensearch-cluster}
+      - node.name=opensearch3
+      - discovery.seed_hosts=opensearch1,opensearch2,opensearch3
+      - cluster.initial_cluster_manager_nodes=opensearch1,opensearch2,opensearch3
+      - node.roles=cluster_manager,data,ingest
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+      - plugins.security.disabled=false
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g -Duser.timezone=${TZ:-Europe/Istanbul}
+      - network.host=0.0.0.0
+      - http.port=9200
+      - transport.port=9300
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sfk -u \"admin:$$OPENSEARCH_INITIAL_ADMIN_PASSWORD\" https://127.0.0.1:9200/_cluster/health | grep -q '\"status\"' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
+
+  graylog:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 3G
+        reservations:
+          cpus: "0.50"
+          memory: 1G
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+      - GRAYLOG_LOG_LEVEL=INFO
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch1:9200,http://opensearch2:9200,http://opensearch3:9200
+      - GRAYLOG_SERVER_JAVA_OPTS=-Xms1g -Xmx1g -Duser.timezone=${TZ:-Europe/Istanbul}
+      - GRAYLOG_ROOT_TIMEZONE=${TZ:-Europe/Istanbul}
+    ports: []
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      opensearch1:
+        condition: service_healthy
+      opensearch2:
+        condition: service_healthy
+      opensearch3:
+        condition: service_healthy
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+
+  fluent-bit:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+        reservations:
+          cpus: "0.20"
+          memory: 128M
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+      # Graylog log_env / stream ayrımı (merkez UDP 5151); prod dışı lab için .env ile dev_test
+      - LOG_SYSTEM_ENV=${LOG_SYSTEM_ENV:-prod}
+      # Grafana/OpenSearch company_id değişkeni: tek kiracıda .env ile gerçek kod (ör. acme_corp); çok kiracıda uç JSON + pipeline
+      - COMPANY_ID=${LOG_SYSTEM_COMPANY_ID:-default}
+    ports:
+      - "5151:5151/udp"
+      # Doğrudan syslog (vCenter / firewall); TLS değil — düz UDP veya TCP
+      - "1514:1514/udp"
+      - "1514:1514/tcp"
+    depends_on:
+      graylog:
+        condition: service_healthy
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+
+  signing-engine:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.20"
+          memory: 256M
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9080/health >/dev/null || curl -sf http://localhost:9080/docs >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 25s
+    ports: []
+
+  graylog-post-init:
+    <<: *prod-logging
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+    depends_on:
+      graylog:
+        condition: service_healthy
+
+  watchdog:
+    <<: *prod-logging
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+    depends_on:
+      graylog:
+        condition: service_healthy
+
+  alert-webhook:
+    <<: *prod-logging
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9009/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 15s
+
+  minio:
+    <<: *prod-logging
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+    profiles: ["prod-storage"]
+
+  grafana:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.20"
+          memory: 256M
+    ports: []
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_LOG_LEVEL=warn
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=${TZ:-Europe/Istanbul}
+    depends_on:
+      opensearch1:
+        condition: service_healthy
+      alert-webhook:
+        condition: service_healthy
+
+  nginx-proxy-manager:
+    <<: *prod-logging
+    profiles: ["prod-edge"]
+
+  log-management-ui:
+    <<: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.20"
+          memory: 256M
+    environment:
+      - TZ=${TZ:-Europe/Istanbul}
+      # Graylog «Aç» derin bağlantıları (panel syslog drilldown); .env’de GRAYLOG_WEB_URL
+      - GRAYLOG_WEB_URL=${GRAYLOG_WEB_URL:-}
+    ports:
+      - "${MANAGEMENT_UI_PORT:-8080}:8080"
+    depends_on:
+      graylog:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy

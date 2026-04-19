@@ -1,0 +1,16 @@
+# 5651 / syslog kaynak IP’si (Docker köprüsü)
+#
+# `docker-compose.prod.yml` içinde fluent-bit zaten 1514/udp+tcp publish eder; bu dosyada
+# ek port tanımı gerekmez (çift tanım kafa karıştırırdı).
+#
+# Graylog’da `gl2_remote_ip` 172.20.x iken cihazınız 10.x.x.x ise: GELF’i taşıyan hop
+# görülüyor olabilir. Gerçek gönderen için Fluent Bit `Source_Address_Key` →
+# `syslog_sender_ip` kullanılır (`src/services/fluent-bit/fluent-bit.conf`).
+#
+# `syslog_sender_ip` hâlâ Docker iç NAT adresi ise: köprü modunda soket eşi SNAT’tır;
+# çözümler: aynı hostta rsyslog/syslog-ng ile 1514’ü dinleyip kaynağı mesaja yazmak veya
+# kuruma özel host ağı / NodePort+externalTrafficPolicy gibi gerçek istemci IP’sinin
+# pod’a ulaştığı topoloji (bkz. docs/LOG_AKISI_UCTAN_UCA_NORMALIZASYON_TR.md).
+#
+# Boş override: sadece dokümantasyon; prod/staging compose ile birlikte kullanılabilir.
+services: {}
