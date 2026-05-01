@@ -1,0 +1,14 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: telegram-webhook
+    receivers:
+      - uid: telegram-webhook-receiver
+        type: webhook
+        settings:
+          url: http://alert-webhook:9009/grafana
+          httpMethod: POST
+          maxAlerts: 0
+          title: "{{ template \"default.title\" . }}"
+          message: "{{ template \"default.message\" . }}"
