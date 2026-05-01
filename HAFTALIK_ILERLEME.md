@@ -24,7 +24,7 @@
 | 1     | 07.04 - 13.04.2026 | Sistem mimarisi: `docker-compose` topolojisi, ağ ve servis bağımlılıkları; `docs/` ile kurulum–işletme özeti                   | %42                    | ✅ Tamamlandı |
 | 2     | 14.04 - 20.04.2026 | Log toplama hattı: Fluent Bit, Y-modeli (arşiv + analiz kolu), Kafka’ya iletim; uçtan uca akış doğrulama (`test-log-flow` vb.) | %58                    | ✅ Tamamlandı |
 | 3     | 21.04 - 27.04.2026 | Graylog: input, stream ve index-set yapısı; ham/normalize ayrımı; temel pipeline davranışının doğrulanması                     | %60                    | ✅ Tamamlandı |
-| 4     | 28.04 - 04.05.2026 | Akıllı normalizasyon: profil/lookup, kanonik alan eşlemesi, `quality_control` ve bilinmeyen formatların yönetimi               | %68                    | ⬜ Başlamadı  |
+| 4     | 28.04 - 04.05.2026 | Akıllı normalizasyon: profil/lookup, kanonik alan eşlemesi, `quality_control` ve bilinmeyen formatların yönetimi               | %68                    | ✅ Tamamlandı |
 | 5     | 05.05 - 11.05.2026 | OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı                          | %74                    | ⬜ Başlamadı  |
 | 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ⬜ Başlamadı  |
 | 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ⬜ Başlamadı  |
@@ -40,6 +40,33 @@
 ## Haftalık İlerleme Kayıtları
 
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
+
+---
+
+### Hafta 4 *(Tarih: 28.04.2026 - 04.05.2026)*
+
+**Plandaki hedef:**
+
+- Akıllı normalizasyon: profil/lookup, kanonik alan eşlemesi, `quality_control` ve bilinmeyen formatların yönetimi
+
+**Bu hafta yaptıklarım:**
+
+- Profil/lookup yapısını gözden geçirip logların kanonik alanlara daha tutarlı eşlenmesini sağladım.
+- Normalizasyon akışında bilinmeyen formatların `quality_control` tarafına düşmesini doğruladım.
+- Kural setlerinde saha eşleşmelerini netleştirerek hatalı sınıflandırma oranını düşürecek düzenlemeler yaptım.
+- Akış doğrulamalarını senaryolarla kontrol edip haftalık kayıt kapsamına aldım.
+
+**Plana göre durumum:**
+
+- Hafta 4 hedefleri planlanan kapsamda tamamlandı.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- Bazı log kaynaklarında alan isimlerinin beklenenden farklı gelmesi nedeniyle ek eşleme kuralı ihtiyacı oluştu.
+
+**Gelecek hafta hedefim:**
+
+- İş planı **Hafta 5:** OpenSearch/Grafana tarafı, SOC panelleri ve alarm-webhook hattının doğrulanması.
 
 ---
 
