@@ -25,7 +25,7 @@
 | 2     | 14.04 - 20.04.2026 | Log toplama hattı: Fluent Bit, Y-modeli (arşiv + analiz kolu), Kafka’ya iletim; uçtan uca akış doğrulama (`test-log-flow` vb.) | %58                    | ✅ Tamamlandı |
 | 3     | 21.04 - 27.04.2026 | Graylog: input, stream ve index-set yapısı; ham/normalize ayrımı; temel pipeline davranışının doğrulanması                     | %60                    | ✅ Tamamlandı |
 | 4     | 28.04 - 04.05.2026 | Akıllı normalizasyon: profil/lookup, kanonik alan eşlemesi, `quality_control` ve bilinmeyen formatların yönetimi               | %68                    | ✅ Tamamlandı |
-| 5     | 05.05 - 11.05.2026 | OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı                          | %74                    | ⬜ Başlamadı  |
+| 5     | 05.05 - 11.05.2026 | OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı                          | %74                    | ✅ Tamamlandı |
 | 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ⬜ Başlamadı  |
 | 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ⬜ Başlamadı  |
 | 8     | 26.05 - 01.06.2026 | Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri                            | %91                    | ⬜ Başlamadı  |
@@ -40,6 +40,33 @@
 ## Haftalık İlerleme Kayıtları
 
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
+
+---
+
+### Hafta 5 *(Tarih: 05.05.2026 - 11.05.2026)*
+
+**Plandaki hedef:**
+
+- OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı
+
+**Bu hafta yaptıklarım:**
+
+- OpenSearch tarafında indeks ve sorgu davranışlarını gözden geçirip dashboard için kullanılan alanların tutarlılığını netleştirdim.
+- Grafana veri kaynağı ve SOC/operasyon panellerinde kullanılan sorguları sadeleştirip görünürlüğü artırdım.
+- Alarm ve webhook hattını uçtan uca doğrulayarak bildirim akışının çalışmasını kontrol ettim.
+- Panel tarafında tekrar eden veya boş sonuç üreten bazı sorgu kombinasyonlarını düzenledim.
+
+**Plana göre durumum:**
+
+- Hafta 5 hedefleri planla uyumlu şekilde tamamlandı ve tablo durumunda "Tamamlandı" olarak işaretlendi.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- Bazı panel sorgularında alan eşleşmelerine bağlı boş sonuçlar görüldü; filtre ve alan kullanımı güncellenerek giderildi.
+
+**Gelecek hafta hedefim:**
+
+- İş planı **Hafta 6:** 5651 hattı (değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların iyileştirilmesi).
 
 ---
 
