@@ -22,8 +22,8 @@
 | Hafta | Tarih Aralığı      | Planlanan İş                                                                                                                   | Tahmini Tamamlanma (%) | Durum        |
 | ----- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------ |
 | 1     | 07.04 - 13.04.2026 | Sistem mimarisi: `docker-compose` topolojisi, ağ ve servis bağımlılıkları; `docs/` ile kurulum–işletme özeti                   | %42                    | ✅ Tamamlandı |
-| 2     | 14.04 - 20.04.2026 | Log toplama hattı: Fluent Bit, Y-modeli (arşiv + analiz kolu), Kafka’ya iletim; uçtan uca akış doğrulama (`test-log-flow` vb.) | %58                    | 🔄 Devam Ediyor |
-| 3     | 21.04 - 27.04.2026 | Graylog: input, stream ve index-set yapısı; ham/normalize ayrımı; temel pipeline davranışının doğrulanması                     | %60                    | ⬜ Başlamadı  |
+| 2     | 14.04 - 20.04.2026 | Log toplama hattı: Fluent Bit, Y-modeli (arşiv + analiz kolu), Kafka’ya iletim; uçtan uca akış doğrulama (`test-log-flow` vb.) | %58                    | ✅ Tamamlandı |
+| 3     | 21.04 - 27.04.2026 | Graylog: input, stream ve index-set yapısı; ham/normalize ayrımı; temel pipeline davranışının doğrulanması                     | %60                    | ✅ Tamamlandı |
 | 4     | 28.04 - 04.05.2026 | Akıllı normalizasyon: profil/lookup, kanonik alan eşlemesi, `quality_control` ve bilinmeyen formatların yönetimi               | %68                    | ⬜ Başlamadı  |
 | 5     | 05.05 - 11.05.2026 | OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı                          | %74                    | ⬜ Başlamadı  |
 | 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ⬜ Başlamadı  |
@@ -40,6 +40,33 @@
 ## Haftalık İlerleme Kayıtları
 
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
+
+---
+
+### Hafta 3 *(Tarih: 21.04.2026 - 27.04.2026)*
+
+**Plandaki hedef:**
+
+- Graylog: input, stream ve index-set yapısı; ham/normalize ayrımı; temel pipeline davranışının doğrulanması
+
+**Bu hafta yaptıklarım:**
+
+- Graylog input ve stream yapısını hedeflenen akışa göre düzenleyip ham/normalize ayrımını netleştirdim.
+- Index-set tarafında ham ve normalize veri ayrımına uygun kuralları kontrol ettim.
+- Pipeline davranışını temel senaryolarla doğrulayarak akışın beklenen şekilde çalıştığını test ettim.
+- Haftalık hedefe yönelik teknik düzenlemeleri raporlanabilir şekilde dokümante ettim.
+
+**Plana göre durumum:**
+
+- Hafta 3 hedefleri tamamlandı ve iş planı tablosunda "Tamamlandı" olarak güncellendi.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- İlk akış testlerinde bazı stream eşleşmelerinde öncelik sırası kaynaklı sapma görüldü; kural öncelikleri düzenlenerek çözüldü.
+
+**Gelecek hafta hedefim:**
+
+- İş planı **Hafta 4:** akıllı normalizasyon ve `quality_control` akışının güçlendirilmesi.
 
 ---
 
