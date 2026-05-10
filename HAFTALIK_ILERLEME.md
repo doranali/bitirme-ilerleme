@@ -26,7 +26,7 @@
 | 3     | 21.04 - 27.04.2026 | Graylog: input, stream ve index-set yapısı; ham/normalize ayrımı; temel pipeline davranışının doğrulanması                     | %60                    | ✅ Tamamlandı |
 | 4     | 28.04 - 04.05.2026 | Akıllı normalizasyon: profil/lookup, kanonik alan eşlemesi, `quality_control` ve bilinmeyen formatların yönetimi               | %68                    | ✅ Tamamlandı |
 | 5     | 05.05 - 11.05.2026 | OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı                          | %74                    | ✅ Tamamlandı |
-| 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ⬜ Başlamadı  |
+| 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ✅ Tamamlandı |
 | 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ⬜ Başlamadı  |
 | 8     | 26.05 - 01.06.2026 | Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri                            | %91                    | ⬜ Başlamadı  |
 | 9     | 02.06 - 08.06.2026 | Bitirme raporu taslağı; eksik modüllerin tamamlanması; kenar durum ve regresyon kontrolleri                                    | %96                    | ⬜ Başlamadı  |
@@ -42,6 +42,32 @@
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
 
 ---
+
+### Hafta 6 *(Tarih: 12.05.2026 - 18.05.2026)*
+
+**Plandaki hedef:**
+
+- 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi
+
+**Bu hafta yaptıklarım:**
+
+- 5651 sayılı kanuna uyum kapsamında ham logların zaman damgalı imzalanması için `signing-engine` servisi ve ilgili iş akışları kuruldu.
+- Arşivlenen log dosyalarının bütünlüğünü korumak adına imzalama otomasyonu ve doğrulama betikleri (`compliance` araçları) geliştirildi.
+- Yönetim paneli üzerinde Arşiv / WORM sekmesi verileriyle senkronize edilerek imza durumu izlenebilir hale getirildi.
+- Yerel arşivlerin güvenli saklanması ve otomatik temizleme (retention) kuralları test edilerek doğrulandı.
+
+**Plana göre durumum:**
+
+- Hafta 6 hedefleri planlanan takvimin önünde tamamlandı.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- İmzalama sırasında kullanılan zaman damgası sunucusu yanıt sürelerinde bazı gecikmeler yaşandı; zaman aşımı ve yeniden deneme mekanizmaları eklenerek çözüldü.
+
+**Gelecek hafta hedefim:**
+
+- İş planı **Hafta 7:** Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon.
+
 
 ### Hafta 5 *(Tarih: 05.05.2026 - 11.05.2026)*
 

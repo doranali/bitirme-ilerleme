@@ -1,0 +1,5 @@
+# Trusted syslog source IP/FQDN list
+# - One entry per line
+# - Empty lines and lines starting with # are ignored
+# - Enforcement applies to ingest.syslog (1514 udp/tcp)
+

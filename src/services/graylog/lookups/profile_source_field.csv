@@ -1,0 +1,14 @@
+key,value
+cisco_asa_v9,src
+fortigate_v6,src
+fortigate_v7,client_ip
+linux_syslog_generic,src
+linux_ubuntu_22,src
+mikrotik_ros_v6,src-address
+mikrotik_ros_v7,src-address
+panos_v10,src
+panos_v11,source_address
+srx_v22,source_ip
+unknown,src
+win_generic_v10,src
+win_generic_v11,src

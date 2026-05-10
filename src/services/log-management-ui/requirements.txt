@@ -1,0 +1,8 @@
+Flask==3.0.3
+Flask-CORS==4.0.1
+docker==7.1.0
+PyYAML==6.0.1
+requests==2.32.3
+python-dotenv==1.0.1
+gunicorn==23.0.0
+# kubernetes==30.1.0  # Opsiyonel: K8s modu için gerekli, kurulumu 5-10 dk uzatır

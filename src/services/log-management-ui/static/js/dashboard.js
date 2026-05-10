@@ -39,6 +39,10 @@ let fleetHostsTableDelegated = false;
 /** Son yüklenen syslog özeti (hiyerarşi + drilldown sorguları). */
 let fleetSyslogSummaryCache = null;
 let fleetSyslogSourcesDelegated = false;
+let syslogTrustedSourcesDelegated = false;
+let syslogTrustedSourcesDocumentDelegated = false;
+let syslogTrustedSourcesDraft = [];
+let syslogTrustedSourcesSaved = [];
 let agentOnboardingHistory = [];
 let onboardingWizardStep = 1;
 let onboardingSelfTestProbe = '';
@@ -128,6 +132,8 @@ let confirmDangerResolve = null;
 
 function closeConfirmDangerModal() {
     const modal = document.getElementById('confirm-danger-modal');
+    const passEl = document.getElementById('confirm-danger-password');
+    if (passEl) passEl.value = '';
     if (modal) {
         modal.style.display = 'none';
         modal.classList.remove('show');
@@ -141,8 +147,12 @@ function closeConfirmDangerModal() {
 function confirmDangerSubmit() {
     const typetoEl = document.getElementById('confirm-danger-typeto');
     const inputEl = document.getElementById('confirm-danger-input');
+    const passWrapEl = document.getElementById('confirm-danger-password-wrap');
+    const passEl = document.getElementById('confirm-danger-password');
     const requireType = typetoEl && typetoEl.style.display !== 'none';
+    const requirePassword = passWrapEl && passWrapEl.style.display !== 'none';
     if (requireType && inputEl && inputEl.value.trim().toUpperCase() !== 'ONAYLA') return;
+    if (requirePassword && passEl && !passEl.value.trim()) return;
 
     const modal = document.getElementById('confirm-danger-modal');
     if (modal) {
@@ -150,9 +160,14 @@ function confirmDangerSubmit() {
         modal.classList.remove('show');
     }
     if (confirmDangerResolve) {
-        confirmDangerResolve(true);
+        if (requirePassword) {
+            confirmDangerResolve({ confirmed: true, password: passEl ? passEl.value : '' });
+        } else {
+            confirmDangerResolve(true);
+        }
         confirmDangerResolve = null;
     }
+    if (passEl) passEl.value = '';
 }
 
 async function confirmDangerousAction(options) {
@@ -163,6 +178,8 @@ async function confirmDangerousAction(options) {
         const detailEl = document.getElementById('confirm-danger-detail');
         const typetoEl = document.getElementById('confirm-danger-typeto');
         const inputEl = document.getElementById('confirm-danger-input');
+        const passWrapEl = document.getElementById('confirm-danger-password-wrap');
+        const passEl = document.getElementById('confirm-danger-password');
         const submitBtn = document.getElementById('confirm-danger-submit');
 
         if (!modal || !msgEl) return resolve(false);
@@ -174,18 +191,36 @@ async function confirmDangerousAction(options) {
         }
 
         const requireType = options.requireType === true;
+        const requirePassword = options.requirePassword === true;
         if (typetoEl) typetoEl.style.display = requireType ? 'block' : 'none';
         if (inputEl) {
             inputEl.value = '';
             inputEl.onkeyup = () => {
-                if (submitBtn) submitBtn.disabled = requireType ? inputEl.value.trim().toUpperCase() !== 'ONAYLA' : false;
+                if (!submitBtn) return;
+                const typeOk = requireType ? inputEl.value.trim().toUpperCase() === 'ONAYLA' : true;
+                const passOk = requirePassword ? (passEl && passEl.value.trim().length > 0) : true;
+                submitBtn.disabled = !(typeOk && passOk);
             };
         }
-        if (submitBtn) submitBtn.disabled = requireType;
+        if (passWrapEl) passWrapEl.style.display = requirePassword ? 'block' : 'none';
+        if (passEl) {
+            passEl.value = '';
+            passEl.onkeyup = () => {
+                if (!submitBtn) return;
+                const typeOk = requireType ? (inputEl && inputEl.value.trim().toUpperCase() === 'ONAYLA') : true;
+                const passOk = requirePassword ? passEl.value.trim().length > 0 : true;
+                submitBtn.disabled = !(typeOk && passOk);
+            };
+        }
+        if (submitBtn) submitBtn.disabled = requireType || requirePassword;
 
         modal.style.display = 'flex';
         modal.classList.add('show');
-        if (inputEl && requireType) setTimeout(() => inputEl.focus(), 100);
+        if (inputEl && requireType) {
+            setTimeout(() => inputEl.focus(), 100);
+        } else if (passEl && requirePassword) {
+            setTimeout(() => passEl.focus(), 100);
+        }
     });
 }
 
@@ -422,6 +457,9 @@ function applyRoleBasedUiAccess() {
     setButtonPermission('agent-token-revoke-select', canAdmin, 'Bu işlem için admin rolü gerekli');
     setButtonPermission('agent-revoke-token-btn', canAdmin, 'Bu işlem için admin rolü gerekli');
     setButtonPermission('agent-copy-install-btn', canAdmin, 'Bu işlem için admin rolü gerekli');
+    setButtonPermission('syslog-trusted-source-add-btn', canAdmin, 'Bu işlem için admin rolü gerekli');
+    setButtonPermission('syslog-trusted-sources-save-btn', canAdmin, 'Bu işlem için admin rolü gerekli');
+    setButtonPermission('syslog-trusted-source-input', canAdmin, 'Bu işlem için admin rolü gerekli');
     const navFleet = document.getElementById('nav-agent-fleet');
     if (navFleet) {
         navFleet.style.display = canOperate ? '' : 'none';
@@ -526,6 +564,7 @@ function switchTab(tabName) {
         config: { title: 'Yapılandırma', subtitle: 'Sistem ayarlarını düzenleyin' },
         'agent-fleet': { title: 'Uç nokta envanteri', subtitle: 'Kayıtlı hostlar, log hacmi ve kurulum' },
         settings: { title: 'Ayarlar', subtitle: '.env kataloğu, depolama ve doğrulama' },
+        normalization: { title: 'Akıllı Normalizasyon Merkezi', subtitle: 'AI destekli cihaz keşfi ve veri ayrıştırma' },
         monitoring: { title: 'İzleme', subtitle: 'Gerçek zamanlı sistem metrikleri' },
         logs: { title: 'Loglar', subtitle: 'Sistem loglarını görüntüleyin' },
         archive: { title: 'Arşiv / WORM', subtitle: '5651 uyumlu arşiv durumu ve retention' }
@@ -549,10 +588,12 @@ function switchTab(tabName) {
         applyPlatformSpecificVisibility();
         loadGuidedSettings();
         loadStorageCandidates();
-        loadNormalizationData();
         loadReleaseStatus();
         loadHpaPolicies();
         populateRolloutDeployments();
+    } else if (tabName === 'normalization') {
+        loadNormalizationData();
+        loadVendorPacks();
     } else if (tabName === 'monitoring') {
         loadMonitoringData();
     } else if (tabName === 'logs') {
@@ -597,6 +638,7 @@ async function logout() {
 }
 
 function setupEventListeners() {
+    ensureSyslogTrustedSourcesDelegation();
     // Header buttons
     document.getElementById('refresh-btn').addEventListener('click', loadAllData);
     document.getElementById('help-btn').addEventListener('click', showHelp);
@@ -741,6 +783,27 @@ function setupEventListeners() {
     if (agentRefreshBtn) {
         agentRefreshBtn.addEventListener('click', loadAgentFleetData);
     }
+    const syslogTrustedAddBtn = document.getElementById('syslog-trusted-source-add-btn');
+    if (syslogTrustedAddBtn) {
+        syslogTrustedAddBtn.addEventListener('click', addSyslogTrustedSourceDraft);
+    }
+    const syslogTrustedRefreshBtn = document.getElementById('syslog-trusted-sources-refresh-btn');
+    if (syslogTrustedRefreshBtn) {
+        syslogTrustedRefreshBtn.addEventListener('click', loadSyslogTrustedSources);
+    }
+    const syslogTrustedSaveBtn = document.getElementById('syslog-trusted-sources-save-btn');
+    if (syslogTrustedSaveBtn) {
+        syslogTrustedSaveBtn.addEventListener('click', saveSyslogTrustedSources);
+    }
+    const syslogTrustedInput = document.getElementById('syslog-trusted-source-input');
+    if (syslogTrustedInput) {
+        syslogTrustedInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addSyslogTrustedSourceDraft();
+            }
+        });
+    }
     const agentFleetRepairBtn = document.getElementById('agent-fleet-repair-btn');
     if (agentFleetRepairBtn) {
         agentFleetRepairBtn.addEventListener('click', repairAgentFleetNodesFromTokens);
@@ -819,19 +882,39 @@ function setupEventListeners() {
         agentProfileSelect.addEventListener('change', onAgentProfileChanged);
     }
 
-    const qcSamplesRefreshBtn = document.getElementById('qc-samples-refresh-btn');
-    if (qcSamplesRefreshBtn) {
-        qcSamplesRefreshBtn.addEventListener('click', loadNormalizationData);
+    const ncSamplesRefreshBtn = document.getElementById('nc-samples-refresh-btn');
+    if (ncSamplesRefreshBtn) {
+        ncSamplesRefreshBtn.addEventListener('click', loadNormalizationData);
     }
 
-    const normAddMappingBtn = document.getElementById('norm-add-mapping-btn');
-    if (normAddMappingBtn) {
-        normAddMappingBtn.addEventListener('click', addNormalizationMapping);
+    const ncSaveMasterBtn = document.getElementById('nc-save-master-btn');
+    if (ncSaveMasterBtn) {
+        ncSaveMasterBtn.addEventListener('click', ncSaveMaster);
     }
+
     const normDryRunBtn = document.getElementById('norm-dry-run-btn');
     if (normDryRunBtn) {
         normDryRunBtn.addEventListener('click', normDryRunPreview);
     }
+    
+    const vpGrokTestBtn = document.getElementById('vp-grok-test-btn');
+    if (vpGrokTestBtn) {
+        vpGrokTestBtn.addEventListener('click', vendorPackGrokTest);
+    }
+
+    // Vendor Packs & Library Toggles
+    const vpRefreshBtn = document.getElementById('vendor-packs-refresh-btn');
+    if (vpRefreshBtn) vpRefreshBtn.addEventListener('click', loadVendorPacks);
+    const vpSaveBtn = document.getElementById('vp-save-btn');
+    if (vpSaveBtn) vpSaveBtn.addEventListener('click', vendorPackSave);
+
+    document.querySelectorAll('.nc-lib-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-target');
+            document.querySelectorAll('.nc-lib-toggle').forEach(b => b.classList.toggle('active', b === btn));
+            document.querySelectorAll('.nc-library-pane').forEach(p => p.style.display = (p.id === target ? 'block' : 'none'));
+        });
+    });
 
     const perfDetectBtn = document.getElementById('perf-detect-ram-btn');
     if (perfDetectBtn) perfDetectBtn.addEventListener('click', perfDetectRam);
@@ -2391,8 +2474,8 @@ function renderAgentHistoryTable() {
 
     container.innerHTML = `
         <div style="font-weight:600; margin-bottom:0.35rem;">Kayıt geçmişi (son 20)</div>
-        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.78rem;">Son olay: indirme veya aktivasyon (heartbeat değil). Saat: Europe/Istanbul.</p>
-        <div style="overflow-x:auto;">
+        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.78rem;">Son olay: indirme veya aktivasyon. Tablonun içinde kaydırabilirsiniz.</p>
+        <div class="logs-table-wrap agent-history-table-wrap">
         <table class="logs-table">
             <thead><tr>
                 <th>Profil</th>
@@ -2471,15 +2554,10 @@ async function initOnboardingWizard() {
         const hintBox = document.getElementById('onboarding-wizard-ingest-hints');
         if (hintBox) {
             const tz = escapeHtml(String(d.operationsTimezone || 'Europe/Istanbul'));
-            const ih = d.ingestHints || {};
             const parts = [
-                `<strong>Standart</strong> — Operasyon ve Graylog zamanı: <code>${tz}</code>. GELF olay zamanı Unix epoch; arayüz bu TZ ile gösterilir.`,
-                `Graylog kullanıcı profilinde <strong>Time zone = ${tz}</strong> seçin (admin ile farklı görünmesin).`,
+                `<strong>Saat dilimi:</strong> <code>${tz}</code>`,
+                'İsterseniz Graylog profil saat dilimini bununla eşitleyin.',
             ];
-            if (ih.message) parts.push(`<code>message</code>: ${escapeHtml(String(ih.message))}`);
-            if (ih.host) parts.push(`<code>host</code>: ${escapeHtml(String(ih.host))}`);
-            if (ih.time) parts.push(`<code>date</code> / zaman: ${escapeHtml(String(ih.time))}`);
-            if (ih.syslog) parts.push(escapeHtml(String(ih.syslog)));
             hintBox.innerHTML = parts.map((x) => `<span style="display:block;margin-top:0.25rem;">${x}</span>`).join('');
         }
     } catch (_) {
@@ -2522,13 +2600,13 @@ function updateOnboardingStep3UI() {
     if (windowsAgent) {
         title.textContent = 'Merkez adresi (Windows Fluent Bit ajanı)';
         lead.textContent =
-            `Windows ajanı logları merkeze JSON ile UDP üzerinden gönderir; varsayılan port genelde ${jp}. Syslog cihazları içinse aynı merkez IP’de UDP/TCP ${su} kullanılır (ajan kurulumu değil).`;
+            `Windows ajanı için UDP ${jp}; syslog cihazları için UDP/TCP ${su}.`;
     } else if (syslogHeavy) {
         title.textContent = 'Merkez adresi — syslog (1514) ve isteğe bağlı ajan (5151)';
-        lead.textContent = `vCenter / firewall / syslog: cihazda hedef olarak aynı IP ve UDP veya TCP ${su} (TLS bu girişte yok). Aşağıdaki sayı kutusu yalnızca Fluent Bit’in merkeze JSON gönderdiği UDP portudur (varsayılan ${jp}); syslog ile karıştırmayın.`;
+        lead.textContent = `Syslog cihazları: UDP/TCP ${su}. Ajan kurulacaksa UDP ${jp}.`;
     } else {
         title.textContent = 'Merkez adresi (Fluent Bit ajanı + syslog bilgisi)';
-        lead.textContent = `Linux ajanı merkeze JSON için UDP ${jp} kullanır (kutu). Doğrudan syslog gönderen cihazlar aynı IP’de UDP ${su} veya TCP ${st}.`;
+        lead.textContent = `Ajan için UDP ${jp}; doğrudan syslog için UDP ${su} / TCP ${st}.`;
     }
 
     if (portLabel) {
@@ -2786,20 +2864,65 @@ function buildAgentInstallCommandWindows(installUrlPs1, trustInsecure) {
     const u = String(installUrlPs1 || '').trim();
     if (!u) return '';
     const esc = u.replace(/'/g, "''");
+    const alt = u.startsWith('https://') ? u.replace(/^https:\/\//i, 'http://') : '';
+    const altEsc = alt.replace(/'/g, "''");
     const pre = _windowsAgentTlsPreamble(!!trustInsecure);
-    return `${pre}$url = '${esc}'
-Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\\LogPlatformAgentInstall.ps1" -UseBasicParsing
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\LogPlatformAgentInstall.ps1"`;
+    return `${pre}$ErrorActionPreference = 'Stop'
+$url = '${esc}'
+$fallbackUrl = '${altEsc}'
+$out = "$env:TEMP\\LogPlatformAgentInstall.ps1"
+Write-Host "[INFO] Agent installer indiriliyor: $url"
+try {
+  Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
+} catch {
+  if ($fallbackUrl -and $fallbackUrl -ne $url) {
+    Write-Warning "[WARN] Ilk URL basarisiz, HTTP fallback denenecek: $fallbackUrl"
+    Invoke-WebRequest -Uri $fallbackUrl -OutFile $out -UseBasicParsing
+  } else {
+    throw
+  }
+}
+Write-Host "[OK] Indirme tamamlandi: $out"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $out`;
 }
 
 function buildAgentUninstallCommandWindows(uninstallUrlPs1, trustInsecure) {
     const u = String(uninstallUrlPs1 || '').trim();
     if (!u) return '';
     const esc = u.replace(/'/g, "''");
+    const alt = u.startsWith('https://') ? u.replace(/^https:\/\//i, 'http://') : '';
+    const altEsc = alt.replace(/'/g, "''");
     const pre = _windowsAgentTlsPreamble(!!trustInsecure);
-    return `${pre}$url = '${esc}'
-Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\\LogPlatformAgentUninstall.ps1" -UseBasicParsing
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\LogPlatformAgentUninstall.ps1"`;
+    return `${pre}$ErrorActionPreference = 'Stop'
+$url = '${esc}'
+$fallbackUrl = '${altEsc}'
+$out = "$env:TEMP\\LogPlatformAgentUninstall.ps1"
+Write-Host "[INFO] Agent uninstall script indiriliyor: $url"
+try {
+  Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
+} catch {
+  if ($fallbackUrl -and $fallbackUrl -ne $url) {
+    Write-Warning "[WARN] Ilk URL basarisiz, HTTP fallback denenecek: $fallbackUrl"
+    Invoke-WebRequest -Uri $fallbackUrl -OutFile $out -UseBasicParsing
+  } else {
+    throw
+  }
+}
+Write-Host "[OK] Indirme tamamlandi: $out"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $out`;
+}
+
+function normalizeScriptUrlForCurrentPanel(url) {
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    try {
+        const parsed = new URL(raw, window.location.origin);
+        if (window.location.protocol === 'http:' && parsed.protocol === 'https:') {
+            parsed.protocol = 'http:';
+            return parsed.toString();
+        }
+    } catch (_) {}
+    return raw;
 }
 
 function applyAgentInstallCommandsFromResponse(data) {
@@ -2814,10 +2937,10 @@ function applyAgentInstallCommandsFromResponse(data) {
     const winUnTa = document.getElementById('agent-uninstall-command-win');
     const hint = document.getElementById('agent-install-kind-hint');
 
-    const primary = String(data.installUrl || '').trim();
-    const urlSh = String(data.installUrlSh || data.installUrl || '').trim();
-    const urlPs = String(data.installUrlPs1 || data.installUrl || '').trim();
-    const urlUn = String(data.uninstallUrlPs1 || '').trim();
+    const primary = normalizeScriptUrlForCurrentPanel(String(data.installUrl || '').trim());
+    const urlSh = normalizeScriptUrlForCurrentPanel(String(data.installUrlSh || data.installUrl || '').trim());
+    const urlPs = normalizeScriptUrlForCurrentPanel(String(data.installUrlPs1 || data.installUrl || '').trim());
+    const urlUn = normalizeScriptUrlForCurrentPanel(String(data.uninstallUrlPs1 || '').trim());
 
     if (urlEl) urlEl.value = primary;
 
@@ -2837,7 +2960,7 @@ function applyAgentInstallCommandsFromResponse(data) {
         if (urlUnEl) urlUnEl.value = urlUn;
         if (winUnTa) winUnTa.value = urlUn ? buildAgentUninstallCommandWindows(urlUn, trustTls) : '';
         if (hint) {
-            hint.textContent = 'Bu token yalnızca Windows içindir. Üstteki adres .ps1 biter; Linux’ta çalışmaz. Komutu hedef Windows’ta Yönetici PowerShell ile çalıştırın (Fluent Bit indirilir, servis kurulur). Kaldırma: aynı token ile alttaki «Kaldırma» bağlantısı — çalışınca panele audit kaydı düşer. Linux için panelde «Linux Agent» veya «Syslog Relay» ile yeni token alın.';
+            hint.textContent = 'Windows tokenı: .ps1 komutunu hedefte Yönetici PowerShell ile çalıştırın.';
         }
     } else {
         if (rowBash) rowBash.style.display = 'flex';
@@ -2852,9 +2975,9 @@ function applyAgentInstallCommandsFromResponse(data) {
             const rec = data.record || {};
             const pid = String(rec.profileId || rec.profile_id || '');
             if (pid === 'syslog-relay-v1') {
-                hint.textContent = 'Bu betik isteğe bağlı syslog relay kurar (ayrı Linux toplayıcı). vCenter/firewall doğrudan merkez IP’nin 1514 UDP/TCP portuna da syslog gönderebilir; relay zorunlu değil. Üstteki adres .sh biter; Windows’ta çalışmaz.';
+                hint.textContent = 'Syslog relay tokenı: ayrı Linux toplayıcı için .sh komutu.';
             } else {
-                hint.textContent = 'Bu token Linux Fluent Bit ajanı içindir (JSON → UDP 5151). Üstteki adres .sh biter; Windows’ta çalışmaz. Windows için «Windows Agent» profiliyle ayrı token alın.';
+                hint.textContent = 'Linux ajan tokenı: .sh komutunu Linux sunucuda çalıştırın.';
             }
         }
     }
@@ -3063,39 +3186,209 @@ function buildGraylogSearchUrl(webBase, query, rangeSec) {
     return `${b}/search?q=${q}&rangetype=relative&relative=${r}`;
 }
 
+function renderSyslogTrustedSourcesPanel() {
+    const box = document.getElementById('syslog-trusted-sources-list');
+    if (!box) return;
+    if (!syslogTrustedSourcesDraft.length) {
+        box.innerHTML = '<span class="help-text">Kayıtlı kaynak yok.</span>';
+        renderSyslogTrustedDraftStatus();
+        return;
+    }
+    const rows = syslogTrustedSourcesDraft
+        .map((src, idx) => {
+            const val = escapeHtml(String(src));
+            return `<span class="badge badge-info" style="display:inline-flex;align-items:center;gap:0.35rem;margin:0.15rem 0.2rem 0.15rem 0;padding:0.35rem 0.5rem;">
+                <code>${val}</code>
+                <button type="button" class="btn btn-sm btn-outline-secondary syslog-trusted-source-remove-btn" data-idx="${idx}" style="padding:0.05rem 0.3rem;line-height:1.1;">×</button>
+            </span>`;
+        })
+        .join('');
+    box.innerHTML = rows;
+    renderSyslogTrustedDraftStatus();
+}
+
+function normalizeTrustedSourceList(list) {
+    return (Array.isArray(list) ? list : [])
+        .map((x) => String(x || '').trim().toLowerCase())
+        .filter(Boolean)
+        .sort();
+}
+
+function hasSyslogTrustedDraftChanges() {
+    const a = normalizeTrustedSourceList(syslogTrustedSourcesSaved);
+    const b = normalizeTrustedSourceList(syslogTrustedSourcesDraft);
+    return JSON.stringify(a) !== JSON.stringify(b);
+}
+
+function renderSyslogTrustedDraftStatus() {
+    const el = document.getElementById('syslog-trusted-sources-draft-status');
+    if (!el) return;
+    if (hasSyslogTrustedDraftChanges()) {
+        el.textContent = 'Taslak değişiklik var, henüz kalıcı değil. Uygulamak için Kaydet.';
+        el.style.color = 'var(--color-warning)';
+    } else {
+        el.textContent = 'Panel ve sunucu listesi senkron.';
+        el.style.color = '';
+    }
+}
+
+function renderSyslogIngestGuardStatus() {
+    const el = document.getElementById('syslog-ingest-guard-status');
+    if (!el) return;
+    const trustedCount = Array.isArray(syslogTrustedSourcesSaved) ? syslogTrustedSourcesSaved.length : 0;
+    const unknownCount = Number((fleetSyslogSummaryCache && fleetSyslogSummaryCache.unknownEmitterCount) || 0);
+    if (trustedCount === 0) {
+        el.textContent = 'All-ingest guard aktif: kayıtlı kaynak yok, dış kaynak ingest trafiği drop edilir.';
+        el.style.color = 'var(--color-danger)';
+        return;
+    }
+    if (unknownCount > 0) {
+        el.textContent = `All-ingest guard aktif: ${trustedCount} kayıtlı kaynak var, ${unknownCount} kayıt dışı gönderici drop edilir.`;
+        el.style.color = 'var(--color-warning)';
+        return;
+    }
+    el.textContent = `All-ingest guard aktif: ${trustedCount} kayıtlı kaynakla yalnız izinli kaynaklar kabul edilir.`;
+    el.style.color = 'var(--color-success)';
+}
+
+async function loadSyslogTrustedSources() {
+    const box = document.getElementById('syslog-trusted-sources-list');
+    if (box) box.textContent = 'Yükleniyor...';
+    try {
+        const data = await apiRequest('/api/security/syslog-trusted-sources');
+        syslogTrustedSourcesDraft = Array.isArray(data.sources) ? [...data.sources] : [];
+        syslogTrustedSourcesSaved = [...syslogTrustedSourcesDraft];
+        renderSyslogTrustedSourcesPanel();
+        renderSyslogTrustedDraftStatus();
+        renderSyslogIngestGuardStatus();
+    } catch (e) {
+        if (box) box.innerHTML = `<span class="help-text">Yüklenemedi: ${escapeHtml(e.message || String(e))}</span>`;
+        renderSyslogIngestGuardStatus();
+    }
+}
+
+function addSyslogTrustedSourceDraft() {
+    const input = document.getElementById('syslog-trusted-source-input');
+    if (!input) return;
+    const v = String(input.value || '').trim();
+    if (!v) return;
+    if (!/^[A-Za-z0-9._:-]+$/.test(v)) {
+        showAlert('Geçersiz kaynak formatı', 'warning');
+        return;
+    }
+    if (syslogTrustedSourcesDraft.some((x) => String(x).toLowerCase() === v.toLowerCase())) {
+        showAlert('Kaynak zaten listede', 'info');
+        return;
+    }
+    syslogTrustedSourcesDraft.push(v);
+    input.value = '';
+    renderSyslogTrustedSourcesPanel();
+    renderSyslogTrustedDraftStatus();
+}
+
+async function saveSyslogTrustedSources() {
+    try {
+        const latest = await apiRequest('/api/security/syslog-trusted-sources');
+        const before = Array.isArray(latest && latest.sources) ? latest.sources : [];
+        syslogTrustedSourcesSaved = [...before];
+        const after = Array.isArray(syslogTrustedSourcesDraft) ? syslogTrustedSourcesDraft : [];
+        const afterSet = new Set(after.map((x) => String(x).trim().toLowerCase()));
+        const removedSources = before.filter((x) => !afterSet.has(String(x).trim().toLowerCase()));
+        let removalConfirmation = null;
+        if (removedSources.length) {
+            const res = await confirmDangerousAction({
+                message: `Trusted listeden ${removedSources.length} kaynak kaldırılıyor.`,
+                detail: `Bu işlem sonrası bu kaynaklardan gelen syslog trafiği düşürülecek. Kaldırılacak: ${removedSources.join(', ')}`,
+                requireType: true,
+                requirePassword: true,
+            });
+            if (!res || res.confirmed !== true || !res.password) {
+                showAlert('Kaldırma işlemi iptal edildi.', 'info');
+                return;
+            }
+            removalConfirmation = {
+                typed: 'ONAYLA',
+                password: res.password,
+                removedSources,
+            };
+        }
+        const data = await apiRequest('/api/security/syslog-trusted-sources', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sources: syslogTrustedSourcesDraft, removalConfirmation }),
+        });
+        syslogTrustedSourcesDraft = Array.isArray(data.sources) ? [...data.sources] : [];
+        syslogTrustedSourcesSaved = [...syslogTrustedSourcesDraft];
+        renderSyslogTrustedSourcesPanel();
+        renderSyslogTrustedDraftStatus();
+        renderSyslogIngestGuardStatus();
+        showAlert('Syslog kaynak listesi güncellendi', 'success');
+        await loadFleetSyslogSummary();
+    } catch (e) {
+        showAlert(`Kaydedilemedi: ${e.message}`, 'danger');
+    }
+}
+
 function ensureFleetSyslogSourcesDelegation() {
     const root = document.getElementById('fleet-syslog-sources');
-    if (!root || fleetSyslogSourcesDelegated) return;
-    fleetSyslogSourcesDelegated = true;
-    root.addEventListener('click', (e) => {
-        const btnAll = e.target.closest('.fleet-syslog-open-emitter-samples');
-        if (btnAll) {
-            e.preventDefault();
-            e.stopPropagation();
-            const idx = parseInt(btnAll.getAttribute('data-emitter-idx') || '-1', 10);
-            void openFleetSyslogDrilldownModal(idx, null);
-            return;
-        }
-        const head = e.target.closest('.fleet-syslog-card-head');
-        if (head && !e.target.closest('a') && !e.target.closest('button')) {
-            const card = head.closest('.fleet-syslog-card');
-            const wrap = card && card.querySelector('.fleet-syslog-sources-wrap');
-            if (wrap) {
-                const open = !wrap.classList.contains('is-open');
-                wrap.classList.toggle('is-open', open);
-                head.classList.toggle('is-open', open);
+    if (root && !fleetSyslogSourcesDelegated) {
+        fleetSyslogSourcesDelegated = true;
+        root.addEventListener('click', (e) => {
+            const btnAll = e.target.closest('.fleet-syslog-open-emitter-samples');
+            if (btnAll) {
+                e.preventDefault();
+                e.stopPropagation();
+                const idx = parseInt(btnAll.getAttribute('data-emitter-idx') || '-1', 10);
+                void openFleetSyslogDrilldownModal(idx, null);
+                return;
             }
-            return;
-        }
-        const srcRow = e.target.closest('tr.fleet-syslog-source-row');
-        if (srcRow) {
-            e.preventDefault();
-            const idx = parseInt(srcRow.getAttribute('data-emitter-idx') || '-1', 10);
-            const sidx = srcRow.getAttribute('data-source-idx');
-            if (idx < 0) return;
-            void openFleetSyslogDrilldownModal(idx, sidx === null || sidx === '' ? null : sidx);
-        }
+            const head = e.target.closest('.fleet-syslog-card-head');
+            if (head && !e.target.closest('a') && !e.target.closest('button')) {
+                const card = head.closest('.fleet-syslog-card');
+                const wrap = card && card.querySelector('.fleet-syslog-sources-wrap');
+                if (wrap) {
+                    const open = !wrap.classList.contains('is-open');
+                    wrap.classList.toggle('is-open', open);
+                    head.classList.toggle('is-open', open);
+                }
+                return;
+            }
+            const srcRow = e.target.closest('tr.fleet-syslog-source-row');
+            if (srcRow) {
+                e.preventDefault();
+                const idx = parseInt(srcRow.getAttribute('data-emitter-idx') || '-1', 10);
+                const sidx = srcRow.getAttribute('data-source-idx');
+                if (idx < 0) return;
+                void openFleetSyslogDrilldownModal(idx, sidx === null || sidx === '' ? null : sidx);
+            }
+        });
+    }
+    const trustedBox = document.getElementById('syslog-trusted-sources-list');
+    if (trustedBox && !syslogTrustedSourcesDelegated) {
+        trustedBox.addEventListener('click', (e) => {
+            const btn = e.target.closest('.syslog-trusted-source-remove-btn');
+            if (!btn) return;
+            const idx = parseInt(btn.getAttribute('data-idx') || '-1', 10);
+            if (Number.isNaN(idx) || idx < 0 || idx >= syslogTrustedSourcesDraft.length) return;
+            syslogTrustedSourcesDraft.splice(idx, 1);
+            renderSyslogTrustedSourcesPanel();
+        });
+        syslogTrustedSourcesDelegated = true;
+    }
+}
+
+function ensureSyslogTrustedSourcesDelegation() {
+    if (syslogTrustedSourcesDocumentDelegated) return;
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.syslog-trusted-source-remove-btn');
+        if (!btn) return;
+        e.preventDefault();
+        const idx = parseInt(btn.getAttribute('data-idx') || '-1', 10);
+        if (Number.isNaN(idx) || idx < 0 || idx >= syslogTrustedSourcesDraft.length) return;
+        syslogTrustedSourcesDraft.splice(idx, 1);
+        renderSyslogTrustedSourcesPanel();
     });
+    syslogTrustedSourcesDocumentDelegated = true;
 }
 
 function closeFleetSyslogDrilldownModal() {
@@ -3192,8 +3485,14 @@ async function loadFleetSyslogSummary() {
             return;
         }
         const meta = escapeHtml(`Örneklenen satır: ${d.sampleRows || 0} (üst sınır 450)`);
+        const policyMeta = escapeHtml(
+            `Politika: drop unknown · Kayıtlı kaynak: ${d.trustedSourcesCount || 0} · Kayıt dışı gönderici: ${d.unknownEmitterCount || 0}`
+        );
         const hint = d.ipHint
             ? `<p class="help-text" style="margin-top:0.55rem;">${escapeHtml(String(d.ipHint))}</p>`
+            : '';
+        const extraHint = ((d.trustedSourcesCount || 0) === 0 && (d.unknownEmitterCount || 0) > 0)
+            ? '<p class="help-text" style="margin-top:0.45rem;">Not: Kayıtlı kaynak yokken görülen satırlar geçmiş aralık/önceki kabul kayıtları olabilir; canlı akış all-ingest guard ile drop edilir.</p>'
             : '';
 
         const emitterCards = emitters.length
@@ -3203,6 +3502,9 @@ async function loadFleetSyslogSummary() {
                         ? '<span class="help-text">— (örnekte transport IP yok)</span>'
                         : `<code>${escapeHtml(String(em.ip || ''))}</code>`;
                     const badge = `<span class="fleet-syslog-role-badge ${fleetSyslogRoleBadgeClass(em.role)}">${escapeHtml(String(em.title || ''))}</span>`;
+                    const trustBadge = em.trusted
+                        ? '<span class="badge badge-success">Kayıtlı kaynak</span>'
+                        : '<span class="badge badge-danger">Kayıt dışı</span>';
                     const cnt = Number(em.sampleCount) || 0;
                     const dist = Number(em.distinctSources) || 0;
                     const srcRows = (Array.isArray(em.sources) ? em.sources : [])
@@ -3218,6 +3520,7 @@ async function loadFleetSyslogSummary() {
                     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem 0.5rem;">
                         ${badge}
                         <span style="font-weight:600;">${ipDisp}</span>
+                        ${trustBadge}
                     </div>
                     <div class="fleet-syslog-card-meta">
                         <span>Örnek içi: <strong>${cnt}</strong></span>
@@ -3265,14 +3568,18 @@ async function loadFleetSyslogSummary() {
             </details>`
                 : '';
 
-        el.innerHTML = `<p class="help-text" style="margin-bottom:0.35rem;">${meta}</p>
+        el.innerHTML = `<p class="help-text" style="margin-bottom:0.2rem;">${meta}</p>
+            <p class="help-text" style="margin-bottom:0.45rem;">${policyMeta}</p>
             ${emitterCards}
             ${ipBlock}
             ${flatBlock}
-            ${hint}`;
+            ${hint}
+            ${extraHint}`;
         ensureFleetSyslogSourcesDelegation();
+        renderSyslogIngestGuardStatus();
     } catch (e) {
         el.innerHTML = `<p class="help-text">Hata: ${escapeHtml(e.message || String(e))}</p>`;
+        renderSyslogIngestGuardStatus();
     }
 }
 
@@ -3288,6 +3595,7 @@ async function loadAgentFleetData() {
     renderAgentHeartbeatSummary();
     renderFleetHostsTable();
     await loadFleetSyslogSummary();
+    await loadSyslogTrustedSources();
     // Varsayılan ingest host'u otomatik doldur (boşsa)
     try {
         const def = await apiRequest('/api/agent/default-ingest');
@@ -3316,106 +3624,501 @@ async function loadReleaseStatus() {
 }
 
 async function loadNormalizationData() {
-    const samplesContainer = document.getElementById('qc-samples-list');
-    const rowsContainer = document.getElementById('normalization-lookup-rows');
-    const addForm = document.getElementById('normalization-add-form');
-    if (!samplesContainer || !rowsContainer) return;
+    const samplesContainer = document.getElementById('nc-qc-samples-list');
+    const qcCountEl = document.getElementById('nc-qc-count');
+    
+    if (!samplesContainer) return;
 
     try {
-        const [samplesData, rowsData] = await Promise.all([
+        const [samplesData, rowsData, packsData, fieldCandidates] = await Promise.all([
             apiRequest('/api/normalization/qc-samples'),
-            apiRequest('/api/normalization/lookup-rows')
+            apiRequest('/api/normalization/lookup-rows'),
+            apiRequest('/api/normalization/vendor-packs'),
+            apiRequest('/api/normalization/qc-field-candidates')
         ]);
 
         const samples = samplesData.samples || [];
+        normSampleStore.clear();
+        if (qcCountEl) qcCountEl.textContent = `${samples.length} Örnek`;
+
         if (samples.length) {
+            samples.forEach((s, idx) => {
+                const sid = String(s.sampleId || `sample-${idx}`);
+                normSampleStore.set(sid, s);
+            });
             samplesContainer.innerHTML = samples.map(s => {
-                const v = escapeHtml(s.vendor);
-                const p = escapeHtml(s.product);
-                const o = escapeHtml(s.os_major);
-                const vq = JSON.stringify(s.vendor);
-                const pq = JSON.stringify(s.product);
-                const oq = JSON.stringify(s.os_major);
-                return `<div class="service-item" style="cursor:pointer;" onclick="fillNormForm(${vq},${pq},${oq})" title="Formu doldurmak için tıklayın">
-                    <span>${v} | ${p} | ${o}</span>
-                    <code style="font-size:0.8rem">${escapeHtml(s.lookupKey)}</code>
+                const v = escapeHtml(s.vendor || 'unknown');
+                const p = escapeHtml(s.product || 'unknown');
+                const sid = escapeHtml(String(s.sampleId || ''));
+                const ts = escapeHtml(s.timestamp || '-').split('T')[1]?.slice(0, 8) || '-';
+                const sender = escapeHtml(String(s.sender || (s.discoveryParts || {}).sender || '-'));
+                const isJson = s.sampleMessage && Object.keys(s.sampleMessage).length > 0;
+                
+                return `<div class="nc-source-item" data-sample-id="${sid}" onclick="onNcSampleSelect('${sid}')">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                        <span style="font-weight:700; font-size:0.9rem;">${v} / ${p}</span>
+                        <span class="badge ${isJson ? 'badge-info' : 'badge-warning'}" style="font-size:0.65rem;">${isJson ? 'JSON' : 'TEXT'}</span>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--text-muted); display:flex; justify-content:space-between;">
+                        <span><i class="fas fa-network-wired"></i> ${sender}</span>
+                        <span><i class="fas fa-clock"></i> ${ts}</span>
+                    </div>
                 </div>`;
             }).join('');
-            if (addForm) addForm.style.display = '';
         } else {
-            samplesContainer.innerHTML = `<p class="loading">${samplesData.message || 'QC stream\'de örnek yok.'}</p>`;
-            if (addForm) addForm.style.display = '';
+            samplesContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">
+                <i class="fas fa-check-circle" style="font-size:2rem; margin-bottom:0.5rem; display:block; opacity:0.3;"></i>
+                Tanımlanmamış log yok.
+            </div>`;
         }
 
-        const rows = rowsData.rows || [];
-        rowsContainer.innerHTML = rows.length
-            ? rows.map(r => `<div class="service-item"><code>${escapeHtml(r.key)}</code> → <strong>${escapeHtml(r.profile)}</strong></div>`).join('')
-            : '<p class="loading">Lookup satırı yok.</p>';
+        renderNormalizationLookups(rowsData.rows || []);
+        renderVendorPacks(packsData.packs || []);
+        renderNcFieldCandidates(fieldCandidates);
+        
     } catch (error) {
-        samplesContainer.innerHTML = `<p class="loading">Yükleme hatası: ${error.message}</p>`;
-        if (rowsContainer) rowsContainer.innerHTML = `<p class="loading">Yükleme hatası.</p>`;
+        samplesContainer.innerHTML = `<p class="loading" style="color:var(--color-danger);">Yükleme hatası: ${error.message}</p>`;
     }
 }
 
-function fillNormForm(vendor, product, osMajor) {
-    const v = document.getElementById('norm-vendor');
-    const p = document.getElementById('norm-product');
-    const o = document.getElementById('norm-os-major');
-    if (v) v.value = vendor || '';
-    if (p) p.value = product || '';
-    if (o) o.value = osMajor || 'unknown';
+const normSampleStore = new Map();
+let selectedNormSampleId = '';
+let selectedNormSampleMessage = {};
+let selectedNormFingerprint = '';
+let selectedNormDiscoveryKey = '';
+let selectedNormRawMessage = '';
+let selectedNormDiscoveryParts = {};
+let selectedNormMappingHints = {};
+let normRawExpanded = false;
+
+function renderNcFieldCandidates(data) {
+    const container = document.getElementById('nc-field-tags-container');
+    if (!container) return;
+    const sources = data.sourceCandidates || [];
+    const dests = data.destinationCandidates || [];
+    
+    let html = '<div style="margin-bottom:0.5rem;"><small style="color:var(--text-muted);">Source adayları:</small><br>';
+    html += sources.map(s => `<span class="nc-field-tag" onclick="setNormField('src', '${s.field}')">${s.field}</span>`).join('') || '—';
+    html += '</div><div><small style="color:var(--text-muted);">Destination adayları:</small><br>';
+    html += dests.map(d => `<span class="nc-field-tag" onclick="setNormField('dst', '${d.field}')">${d.field}</span>`).join('') || '—';
+    html += '</div>';
+    container.innerHTML = html;
 }
 
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-async function addNormalizationMapping() {
+async function ncSaveMaster() {
     const vendor = document.getElementById('norm-vendor')?.value?.trim();
     const product = document.getElementById('norm-product')?.value?.trim();
     const osMajor = document.getElementById('norm-os-major')?.value?.trim() || 'unknown';
-    const profile = document.getElementById('norm-profile')?.value?.trim();
-    const srcField = document.getElementById('norm-src-field')?.value?.trim() || 'src';
-    const dstField = document.getElementById('norm-dst-field')?.value?.trim() || 'dst';
-    const resultEl = document.getElementById('norm-add-result');
-    if (!resultEl) return;
-
+    const resultEl = document.getElementById('nc-final-result');
+    
     if (!vendor || !product) {
-        resultEl.textContent = 'vendor ve product zorunludur.';
-        resultEl.style.color = 'var(--color-danger)';
+        if (resultEl) resultEl.innerHTML = `<div class="alert alert-danger">Lütfen Vendor ve Product bilgilerini girin.</div>`;
         return;
     }
 
     try {
-        const data = await apiRequest('/api/normalization/add-mapping', {
+        const confirmation = await confirmDangerousAction({
+            message: `Sisteme Yeni Cihaz Öğretiliyor: ${vendor} / ${product}`,
+            detail: "Bu işlem Graylog Pipeline kurallarını ve lookup tablolarını canlıda günceller.",
+            requireType: true,
+            requirePassword: true,
+        });
+        if (!confirmation || confirmation.confirmed !== true || !confirmation.password) return;
+
+        if (resultEl) resultEl.innerHTML = `<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Ayarlar uygulanıyor, Graylog güncelleniyor...</div>`;
+        
+        if (ncCurrentMode === 'text') {
+            const pattern = document.getElementById('vp-grok-pattern')?.value?.trim();
+            if (!pattern) throw new Error('Düz metin loglar için Grok deseni girmelisiniz.');
+            
+            await apiRequest('/api/normalization/vendor-pack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vendor, product, grokPattern: pattern, description: `Auto-generated via NC Wizard`, confirmation }),
+            });
+        }
+
+        const srcField = document.getElementById('norm-src-field')?.value?.trim() || 'src';
+        const dstField = document.getElementById('norm-dst-field')?.value?.trim() || 'dst';
+        
+        await apiRequest('/api/normalization/add-mapping', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                vendor,
-                product,
-                os_major: osMajor,
-                profile: profile || undefined,
-                srcField,
-                dstField
+                vendor, product, os_major: osMajor,
+                srcField, dstField,
+                discoveryKey: selectedNormDiscoveryKey,
+                confirmation: { typed: 'ONAYLA', password: confirmation.password }
             })
         });
-        if (data.written) {
-            resultEl.textContent = data.message || 'Mapping eklendi.';
-            resultEl.style.color = 'var(--color-success)';
-            await loadNormalizationData();
-        } else if (data.manualStepRequired) {
-            resultEl.innerHTML = `Manuel adım: <code>${escapeHtml(data.lineToAdd)}</code> satırını ${escapeHtml(data.file)} dosyasına ekleyin.`;
-            resultEl.style.color = 'var(--color-warning)';
+
+        if (resultEl) resultEl.innerHTML = `<div class="alert alert-success"><i class="fas fa-check-circle"></i> Başarıyla eğitildi! Loglar artık otomatik ayrıştırılacak.</div>`;
+        showAlert('Cihaz başarıyla tanımlandı ve kurallar yayınlandı.', 'success');
+        
+        setTimeout(() => loadNormalizationData(), 1500);
+    } catch (err) {
+        if (resultEl) resultEl.innerHTML = `<div class="alert alert-danger">Hata: ${err.message}</div>`;
+    }
+}
+
+function onNcSampleSelect(sid) {
+    const sample = normSampleStore.get(sid);
+    if (!sample) return;
+    
+    selectedNormSampleId = sid;
+    selectedNormSampleMessage = sample.sampleMessage || {};
+    selectedNormFingerprint = sample.eventFingerprint || '';
+    selectedNormDiscoveryKey = sample.discoveryKey || '';
+    selectedNormRawMessage = sample.rawMessage || '';
+    selectedNormDiscoveryParts = sample.discoveryParts || {};
+    selectedNormMappingHints = sample.mappingHints || {};
+    
+    const emptyState = document.getElementById('nc-empty-state');
+    const configForm = document.getElementById('nc-config-form');
+    if (emptyState) emptyState.style.display = 'none';
+    if (configForm) configForm.style.display = 'block';
+    
+    document.querySelectorAll('.nc-source-item').forEach(el => {
+        el.classList.toggle('active', el.getAttribute('data-sample-id') === sid);
+    });
+    
+    const vInput = document.getElementById('norm-vendor');
+    const pInput = document.getElementById('norm-product');
+    const oInput = document.getElementById('norm-os-major');
+    if (vInput) vInput.value = sample.vendor || '';
+    if (pInput) pInput.value = sample.product || '';
+    if (oInput) oInput.value = sample.os_major || 'unknown';
+    
+    const discKeyView = document.getElementById('norm-discovery-key-view');
+    if (discKeyView) discKeyView.textContent = `Discovery Key: ${selectedNormDiscoveryKey || '—'}`;
+    
+    const previewEl = document.getElementById('nc-selected-log-preview');
+    if (previewEl) previewEl.textContent = selectedNormRawMessage;
+    
+    const isJson = Object.keys(selectedNormSampleMessage).length > 0;
+    ncCurrentMode = isJson ? 'json' : 'text';
+    
+    const detector = document.getElementById('nc-strategy-detector');
+    const jsonUI = document.getElementById('nc-parsing-ui-json');
+    const textUI = document.getElementById('nc-parsing-ui-text');
+    
+    if (detector) {
+        if (isJson) {
+            detector.innerHTML = `<i class="fas fa-check-circle" style="color:var(--color-success);"></i> <strong>Akıllı Tespit:</strong> Log yapısı JSON/KV olarak algılandı.`;
+            if (jsonUI) jsonUI.style.display = 'block';
+            if (textUI) textUI.style.display = 'none';
+            // Auto-fill fields if possible
+            const srcInput = document.getElementById('norm-src-field');
+            const dstInput = document.getElementById('norm-dst-field');
+            if (sample.srcField && srcInput) srcInput.value = sample.srcField;
+            if (sample.dstField && dstInput) dstInput.value = sample.dstField;
         } else {
-            resultEl.textContent = data.message || 'Tamamlandı.';
-            resultEl.style.color = '';
+            detector.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:var(--color-warning);"></i> <strong>Akıllı Tespit:</strong> Log yapısı Düz Metin (Unstructured) olarak algılandı.`;
+            if (jsonUI) jsonUI.style.display = 'none';
+            if (textUI) textUI.style.display = 'block';
         }
+    }
+    
+    // Reset test results
+    const testResult = document.getElementById('vp-test-result');
+    const testStatus = document.getElementById('vp-test-status');
+    const finalResult = document.getElementById('nc-final-result');
+    const dryPreview = document.getElementById('norm-dry-run-preview');
+    if (testResult) testResult.style.display = 'none';
+    if (testStatus) testStatus.textContent = '';
+    if (finalResult) finalResult.innerHTML = '';
+    if (dryPreview) dryPreview.style.display = 'none';
+    
+    const saveBtn = document.getElementById('nc-save-master-btn');
+    const dryBtn = document.getElementById('norm-dry-run-btn');
+    if (saveBtn) saveBtn.disabled = false;
+    if (dryBtn) dryBtn.disabled = false;
+}
+
+function renderNormalizationLookups(rows) {
+    const container = document.getElementById('normalization-lookup-rows');
+    if (!container) return;
+    if (!rows || !rows.length) {
+        container.innerHTML = '<p class="loading" style="color:var(--text-muted); padding:1rem; text-align:center;">Kayıtlı eşleştirme yok.</p>';
+        return;
+    }
+    container.innerHTML = rows.map(r => `
+        <div class="service-item" style="padding:0.6rem 0.75rem; border-left:3px solid var(--color-info); margin-bottom:0.4rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <code style="font-size:0.75rem; background:var(--bg-main); padding:0.2rem 0.4rem; border-radius:4px;">${escapeHtml(r.key)}</code>
+                <i class="fas fa-arrow-right" style="font-size:0.7rem; color:var(--text-muted); margin:0 0.5rem;"></i>
+                <span style="font-weight:700; font-size:0.85rem; color:var(--color-primary);">${escapeHtml(r.profile)}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderVendorPacks(packs) {
+    const listEl = document.getElementById('vendor-packs-list');
+    if (!listEl) return;
+    if (!packs || !packs.length) {
+        listEl.innerHTML = '<p class="loading" style="color:var(--text-muted); padding:1rem; text-align:center;">Grok paketi yok.</p>';
+        return;
+    }
+    listEl.innerHTML = packs.map(p => {
+        const vid = escapeHtml(p.id || '');
+        const vendor = escapeHtml(p.vendor || '');
+        const product = escapeHtml(p.product || '');
+        const patternShort = escapeHtml((p.grokPattern || '').slice(0, 60));
+        return `<div class="service-item" style="padding:0.65rem 0.75rem; border-left:3px solid var(--color-success); flex-direction:column; align-items:stretch; margin-bottom:0.4rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.2rem;">
+                <span style="font-weight:700; font-size:0.85rem;">${vendor} / ${product}</span>
+                <button class="btn btn-sm" style="background:transparent; color:var(--color-danger); padding:0.1rem 0.4rem;" onclick="vendorPackDelete('${vid}')"><i class="fas fa-trash-alt"></i></button>
+            </div>
+            <code style="font-size:0.72rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">${patternShort}${patternShort.length === 60 ? '...' : ''}</code>
+        </div>`;
+    }).join('');
+}
+
+async function loadVendorPacks() {
+    const listEl = document.getElementById('vendor-packs-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<p class="loading"><i class="fas fa-spinner fa-spin"></i> Yükleniyor...</p>';
+    try {
+        const data = await apiRequest('/api/normalization/vendor-packs');
+        renderVendorPacks(data.packs || []);
+    } catch (err) {
+        listEl.innerHTML = `<p class="loading" style="color:var(--color-danger);">Hata: ${escapeHtml(err.message)}</p>`;
+    }
+}
+
+async function vendorPackDelete(packId) {
+    if (!packId) return;
+    try {
+        const confirmation = await confirmDangerousAction({
+            message: `Grok Paketi Silinecek: ${packId}`,
+            detail: "Bu işlem Graylog Pipeline kuralını kaldırır. Loglar tekrar QC'ye düşebilir.",
+            requireType: true,
+            requirePassword: true,
+        });
+        if (!confirmation || confirmation.confirmed !== true || !confirmation.password) return;
+        await apiRequest(`/api/normalization/vendor-pack/${encodeURIComponent(packId)}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmation }),
+        });
+        await loadNormalizationData();
+    } catch (err) {
+        showAlert(`Silme hatası: ${err.message}`, 'danger');
+    }
+}
+
+async function vendorPackGrokTest() {
+    const pattern = (document.getElementById('vp-grok-pattern')?.value || '').trim();
+    const message = selectedNormRawMessage || '';
+    const statusEl = document.getElementById('vp-test-status');
+    const resultEl = document.getElementById('vp-test-result');
+    if (!pattern || !message) return;
+    
+    if (statusEl) { statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; statusEl.style.color = ''; }
+    try {
+        const data = await apiRequest('/api/normalization/grok-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pattern, message }),
+        });
+        if (data.match) {
+            if (statusEl) { statusEl.innerHTML = '<i class="fas fa-check-circle"></i> Başarılı'; statusEl.style.color = 'var(--color-success)'; }
+            const caps = data.captures || {};
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = Object.keys(caps).map(k => `
+                    <div style="font-size:0.75rem; margin-bottom:0.2rem;">
+                        <strong style="color:var(--color-primary);">${escapeHtml(k)}:</strong> ${escapeHtml(caps[k])}
+                    </div>
+                `).join('');
+            }
+        } else {
+            if (statusEl) { statusEl.innerHTML = '<i class="fas fa-times-circle"></i> Eşleşmedi'; statusEl.style.color = 'var(--color-danger)'; }
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `<div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(data.hint || 'Hatalı desen.')}</div>`;
+            }
+        }
+    } catch (err) {
+        if (statusEl) statusEl.textContent = 'Hata';
+    }
+}
+
+async function vendorPackSave() {
+    const vendor = (document.getElementById('vp-vendor')?.value || '').trim();
+    const product = (document.getElementById('vp-product')?.value || '').trim();
+    const grokPattern = (document.getElementById('vp-grok-pattern')?.value || '').trim();
+    const description = (document.getElementById('vp-description')?.value || '').trim();
+    const resultEl = document.getElementById('vp-save-result');
+    if (!resultEl) return;
+
+    if (!vendor || !product || !grokPattern) {
+        resultEl.innerHTML = '<span style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle"></i> Vendor, Product ve Grok Deseni zorunludur.</span>';
+        return;
+    }
+    try {
+        const confirmation = await confirmDangerousAction({
+            message: `"${vendor} / ${product}" için Grok kuralı Graylog Pipeline'a eklenecek`,
+            detail: "Bu işlem Graylog Pipeline'ını canlıda değiştirir. Yanlış bir Grok deseni logların ayrıştırılmasını olumsuz etkileyebilir.",
+            requireType: true,
+            requirePassword: true,
+        });
+        if (!confirmation || confirmation.confirmed !== true || !confirmation.password) {
+            resultEl.innerHTML = '<span style="color:var(--color-warning);">İşlem iptal edildi.</span>';
+            return;
+        }
+        resultEl.innerHTML = '<span><i class="fas fa-spinner fa-spin"></i> Pipeline güncelleniyor, please wait...</span>';
+        const data = await apiRequest('/api/normalization/vendor-pack', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor, product, grokPattern, description, confirmation }),
+        });
+        resultEl.innerHTML = `<span style="color:var(--color-success);"><i class="fas fa-check-circle"></i> ${escapeHtml(data.message || 'Kaydedildi.')}</span>`;
+        // UI refresh
+        await loadNormalizationData();
+    } catch (err) {
+        resultEl.innerHTML = `<span style="color:var(--color-danger);"><i class="fas fa-times-circle"></i> Hata: ${escapeHtml(err.message)}</span>`;
+    }
+}
+
+async function vendorPackGrokTest() {
+    const pattern = document.getElementById('vp-grok-pattern')?.value;
+    const message = selectedNormLogRaw || '';
+    const statusEl = document.getElementById('vp-test-status');
+    const resultEl = document.getElementById('vp-test-result');
+    if (statusEl) statusEl.textContent = 'Test ediliyor...';
+    try {
+        const data = await apiRequest('/api/normalization/grok-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pattern, message }),
+        });
+        if (data.match) {
+            if (statusEl) { statusEl.innerHTML = '<i class="fas fa-check-circle"></i> Başarılı'; statusEl.style.color = 'var(--color-success)'; }
+            const caps = data.captures || {};
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = Object.keys(caps).map(k => `
+                    <div style="font-size:0.75rem; margin-bottom:0.2rem;">
+                        <strong style="color:var(--color-primary);">${escapeHtml(k)}:</strong> ${escapeHtml(caps[k])}
+                    </div>
+                `).join('');
+            }
+        } else {
+            if (statusEl) { statusEl.innerHTML = '<i class="fas fa-times-circle"></i> Eşleşmedi'; statusEl.style.color = 'var(--color-danger)'; }
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `<div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(data.hint || 'Hatalı desen.')}</div>`;
+            }
+        }
+    } catch (err) {
+        if (statusEl) statusEl.textContent = 'Hata';
+    }
+}
+
+async function normDryRunPreview() {
+    const vendor = document.getElementById('norm-vendor')?.value?.trim();
+    const product = document.getElementById('norm-product')?.value?.trim();
+    const osMajor = document.getElementById('norm-os-major')?.value?.trim() || 'unknown';
+    const srcField = document.getElementById('norm-src-field')?.value?.trim() || 'src';
+    const dstField = document.getElementById('norm-dst-field')?.value?.trim() || 'dst';
+    const previewEl = document.getElementById('norm-dry-run-preview');
+    if (!previewEl) return;
+
+    if (!vendor || !product) {
+        previewEl.textContent = 'Vendor ve Product gerekli.';
+        previewEl.style.display = 'block';
+        previewEl.style.color = 'var(--color-warning)';
+        return;
+    }
+
+    try {
+        const data = await apiRequest('/api/normalization/dry-run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                vendor, product, os_major: osMajor,
+                srcField, dstField,
+                sampleFingerprint: selectedNormFingerprint || undefined,
+                discoveryKey: selectedNormDiscoveryKey || undefined
+            })
+        });
+        const lines = data.rowsPreview || {};
+        previewEl.textContent = 'Önizleme:\n' + JSON.stringify(data.preview || {}, null, 2) +
+            '\n\nYazılacak CSV satırları:\n' +
+            `profile_resolver.csv => ${lines.resolver || '-'}\n` +
+            `profile_discovery_resolver.csv => ${lines.discoveryResolver || '-'}`;
+        previewEl.style.display = 'block';
+        previewEl.style.color = '';
     } catch (error) {
-        resultEl.textContent = `Hata: ${error.message}`;
-        resultEl.style.color = 'var(--color-danger)';
+        previewEl.textContent = 'Hata: ' + error.message;
+        previewEl.style.display = 'block';
+        previewEl.style.color = 'var(--color-danger)';
+    }
+}
+
+async function vendorPackSave() {
+    const vendor = (document.getElementById('vp-vendor')?.value || '').trim();
+    const product = (document.getElementById('vp-product')?.value || '').trim();
+    const grokPattern = (document.getElementById('vp-grok-pattern')?.value || '').trim();
+    const description = (document.getElementById('vp-description')?.value || '').trim();
+    const resultEl = document.getElementById('vp-save-result');
+    if (!resultEl) return;
+
+    if (!vendor || !product || !grokPattern) {
+        resultEl.innerHTML = '<span style="color:var(--color-danger);"><i class="fas fa-exclamation-triangle"></i> Vendor, Product ve Grok Deseni zorunludur.</span>';
+        return;
+    }
+    try {
+        const confirmation = await confirmDangerousAction({
+            message: `"${vendor} / ${product}" için Grok kuralı Graylog Pipeline'a eklenecek`,
+            detail: "Bu işlem Graylog Pipeline'ını canlıda değiştirir. Yanlış bir Grok deseni logların ayrıştırılmasını olumsuz etkileyebilir.",
+            requireType: true,
+            requirePassword: true,
+        });
+        if (!confirmation || confirmation.confirmed !== true || !confirmation.password) {
+            resultEl.innerHTML = '<span style="color:var(--color-warning);">İşlem iptal edildi.</span>';
+            return;
+        }
+        resultEl.innerHTML = '<span><i class="fas fa-spinner fa-spin"></i> Pipeline güncelleniyor, lütfen bekleyin...</span>';
+        const data = await apiRequest('/api/normalization/vendor-pack', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendor, product, grokPattern, description, confirmation }),
+        });
+        resultEl.innerHTML = `<span style="color:var(--color-success);"><i class="fas fa-check-circle"></i> ${escapeHtml(data.message || 'Kaydedildi.')}</span>`;
+        ['vp-vendor', 'vp-product', 'vp-grok-pattern', 'vp-description', 'vp-test-message'].forEach(id => {
+            const el = document.getElementById(id); if (el) el.value = '';
+        });
+        const testResult = document.getElementById('vp-test-result');
+        const testStatus = document.getElementById('vp-test-status');
+        if (testResult) testResult.style.display = 'none';
+        if (testStatus) testStatus.textContent = '';
+        await loadVendorPacks();
+    } catch (err) {
+        resultEl.innerHTML = `<span style="color:var(--color-danger);"><i class="fas fa-times-circle"></i> Hata: ${escapeHtml(err.message)}</span>`;
+    }
+}
+
+async function vendorPackDelete(packId) {
+    if (!packId) return;
+    try {
+        const confirmation = await confirmDangerousAction({
+            message: `Vendor Pack silinecek: "${packId}"`,
+            detail: "Bu işlem Graylog Pipeline kuralını kaldırır. Etkilenen loglar bir sonraki keşif döngüsünde tekrar QC'ye düşer.",
+            requireType: true,
+            requirePassword: true,
+        });
+        if (!confirmation || confirmation.confirmed !== true || !confirmation.password) return;
+        await apiRequest(`/api/normalization/vendor-pack/${encodeURIComponent(packId)}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmation }),
+        });
+        await loadVendorPacks();
+    } catch (err) {
+        alert(`Silme hatası: ${err.message}`);
     }
 }
 
@@ -3435,13 +4138,21 @@ async function normDryRunPreview() {
         return;
     }
     try {
-        const sample = { vendor, product, os_major: osMajor, message: 'örnek mesaj', src: '192.168.1.1', dst: '10.0.0.1' };
+        const sample = (selectedNormSampleMessage && Object.keys(selectedNormSampleMessage).length)
+            ? selectedNormSampleMessage
+            : { vendor, product, os_major: osMajor, message: 'ornek mesaj', src: '192.168.1.1', dst: '10.0.0.1' };
         const data = await apiRequest('/api/normalization/dry-run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vendor, product, os_major: osMajor, profile: profile || undefined, srcField, dstField, sampleMessage: sample })
+            body: JSON.stringify({ vendor, product, os_major: osMajor, profile: profile || undefined, srcField, dstField, sampleMessage: sample, discoveryKey: selectedNormDiscoveryKey || undefined })
         });
-        previewEl.textContent = 'Önizleme: ' + JSON.stringify(data.preview || {}, null, 2);
+        const lines = data.rowsPreview || {};
+        previewEl.textContent = 'Önizleme:\n' + JSON.stringify(data.preview || {}, null, 2) +
+            '\n\nYazılacak CSV satırları:\n' +
+            `profile_resolver.csv => ${lines.resolver || '-'}\n` +
+            `profile_discovery_resolver.csv => ${lines.discoveryResolver || '-'}\n` +
+            `profile_source_field.csv => ${lines.source || '-'}\n` +
+            `profile_destination_field.csv => ${lines.destination || '-'}`;
         previewEl.style.display = 'block';
         previewEl.style.color = '';
     } catch (error) {

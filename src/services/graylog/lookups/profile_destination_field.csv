@@ -1,0 +1,14 @@
+key,value
+cisco_asa_v9,dst
+fortigate_v6,dst
+fortigate_v7,server_ip
+linux_syslog_generic,dst
+linux_ubuntu_22,dst
+mikrotik_ros_v6,dst-address
+mikrotik_ros_v7,dst-address
+panos_v10,dst
+panos_v11,destination_address
+srx_v22,destination_ip
+unknown,dst
+win_generic_v10,dst
+win_generic_v11,dst

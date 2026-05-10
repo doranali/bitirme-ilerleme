@@ -1,0 +1,25 @@
+{
+  "index_patterns": [
+    "graylog_*",
+    "*-graylog-*",
+    "rawlog_*",
+    "cleanlog_*",
+    "devlog_*",
+    "gl-events_*",
+    "gl-system_*"
+  ],
+  "template": {
+    "settings": {
+      "index.codec": "best_compression"
+    },
+    "mappings": {
+      "properties": {
+        "timestamp": {
+          "type": "date",
+          "format": "uuuu-MM-dd HH:mm:ss.SSS"
+        }
+      }
+    }
+  },
+  "priority": 250
+}

@@ -111,6 +111,7 @@ AGENT_PROFILES_PATH = AGENT_FLEET_PATH / 'profiles.json'
 AGENT_TOKENS_PATH = AGENT_FLEET_PATH / 'enrollment_tokens.json'
 AGENT_NODES_PATH = AGENT_FLEET_PATH / 'nodes.json'
 AGENT_FLEET_SUPPRESSIONS_PATH = AGENT_FLEET_PATH / 'fleet-suppressions.json'
+SYSLOG_TRUSTED_SOURCES_PATH = Path('/app/config/src/services/fluent-bit/syslog-trusted-sources.txt')
 
 USERS_PATH = BASE_DIR / 'users.yaml'
 SESSION_TIMEOUT_MINUTES = int(os.environ.get('SESSION_TIMEOUT_MINUTES', '60'))
@@ -297,6 +298,60 @@ def _safe_write_json(path: Path, payload):
     with open(tmp_path, 'w') as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     os.replace(tmp_path, path)
+
+
+def _read_syslog_trusted_sources() -> list[str]:
+    try:
+        if not SYSLOG_TRUSTED_SOURCES_PATH.exists():
+            return []
+        out: list[str] = []
+        for raw in SYSLOG_TRUSTED_SOURCES_PATH.read_text(encoding='utf-8').splitlines():
+            s = str(raw or '').strip()
+            if not s or s.startswith('#'):
+                continue
+            out.append(s)
+        seen = set()
+        uniq = []
+        for item in out:
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(item)
+        return uniq
+    except Exception:
+        return []
+
+
+def _write_syslog_trusted_sources(items: list[str]) -> None:
+    cleaned = []
+    seen = set()
+    for raw in items or []:
+        s = str(raw or '').strip()
+        if not s:
+            continue
+        try:
+            # Accept IP and FQDN-ish values for syslog senders.
+            if not re.match(r'^[A-Za-z0-9._:-]+$', s):
+                continue
+        except Exception:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(s)
+    body = (
+        "# Trusted syslog source IP/FQDN list\n"
+        "# Managed by Log Management UI API (/api/security/syslog-trusted-sources)\n"
+        "# One source per line\n\n"
+        + "\n".join(cleaned)
+        + ("\n" if cleaned else "")
+    )
+    SYSLOG_TRUSTED_SOURCES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Keep same inode for Docker single-file bind mounts.
+    # Using os.replace() can leave containers pinned to old inode.
+    SYSLOG_TRUSTED_SOURCES_PATH.write_text(body, encoding='utf-8')
 
 
 def _token_digest(raw_token: str):
@@ -1262,9 +1317,26 @@ def _render_windows_agent_ps1(record, raw_token):
         "  $act = @{ token = $LpToken; hostname = $env:COMPUTERNAME; profile = $LpProfile }\n"
         "  if ($LpAgentIp) { $act['agentIpv4'] = $LpAgentIp }\n"
         "  $body = $act | ConvertTo-Json\n"
-        "  Invoke-RestMethod -Uri ($LpApi.TrimEnd('/') + '/api/agent/activate') -Method Post "
+        "  $LpBases = @($LpApi)\n"
+        "  if ($LpApi -match '^https://') { $LpBases += ($LpApi -replace '^https://', 'http://') }\n"
+        "  $LpBases = @($LpBases | Where-Object { $_ } | Select-Object -Unique)\n"
+        "  $sent = $false\n"
+        "  $lastErr = $null\n"
+        "  foreach ($b in $LpBases) {\n"
+        "    try {\n"
+        "      Invoke-RestMethod -Uri (($b.TrimEnd('/')) + '/api/agent/activate') -Method Post "
         "-ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec 15 | Out-Null\n"
-        "  Write-Host '[OK] Merkeze aktivasyon gonderildi.'\n"
+        "      $sent = $true\n"
+        "      break\n"
+        "    } catch {\n"
+        "      $lastErr = $_.Exception.Message\n"
+        "    }\n"
+        "  }\n"
+        "  if ($sent) {\n"
+        "    Write-Host '[OK] Merkeze aktivasyon gonderildi.'\n"
+        "  } else {\n"
+        "    throw ('Aktivasyon URLlerine ulasilamadi: ' + $lastErr)\n"
+        "  }\n"
         "} catch {\n"
         "  Write-Warning ('Aktivasyon istegi basarisiz (ag/firewall): ' + $_.Exception.Message)\n"
         "}\n"
@@ -1290,8 +1362,16 @@ def _render_windows_agent_ps1(record, raw_token):
         f"  $hb = @{{ token = '{t_lit}'; hostname = $env:COMPUTERNAME; status = 'ok' }}\n"
         "  if ($hbIp) { $hb['agentIpv4'] = $hbIp }\n"
         "  $body = $hb | ConvertTo-Json\n"
-        "  Invoke-RestMethod -Uri ($api.TrimEnd('/') + '/api/agent/heartbeat') -Method Post "
+        "  $hbBases = @($api)\n"
+        "  if ($api -match '^https://') { $hbBases += ($api -replace '^https://', 'http://') }\n"
+        "  $hbBases = @($hbBases | Where-Object { $_ } | Select-Object -Unique)\n"
+        "  foreach ($b in $hbBases) {\n"
+        "    try {\n"
+        "      Invoke-RestMethod -Uri (($b.TrimEnd('/')) + '/api/agent/heartbeat') -Method Post "
         "-Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec 25 | Out-Null\n"
+        "      break\n"
+        "    } catch {}\n"
+        "  }\n"
         "} catch {}\n"
         "'@\n"
         "$_lpEaHb = $ErrorActionPreference\n"
@@ -1410,18 +1490,14 @@ def _is_dev_mode():
 
 
 def ensure_dev_admin():
-    """Dev ortamında admin/admin123! ile girişi garanti et."""
+    """Dev ortamında sadece admin kullanıcısı yoksa bootstrap et."""
     if not _is_dev_mode():
         return
     try:
         users = load_users()
         admin_user = next((u for u in users if u.get('username') == 'admin'), None)
         default_pass = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'admin123!')
-        if admin_user and not check_password_hash(admin_user.get('password_hash', ''), default_pass):
-            admin_user['password_hash'] = generate_password_hash(default_pass)
-            save_users(users)
-            print(f"[DEV] admin parolası '{default_pass}' ile sıfırlandı.")
-        elif not admin_user:
+        if not admin_user:
             users.append({
                 'username': 'admin',
                 'password_hash': generate_password_hash(default_pass),
@@ -7305,6 +7381,7 @@ def archive_status():
 
 LOOKUPS_DIR = BASE_DIR / 'src' / 'services' / 'graylog' / 'lookups'
 PROFILE_RESOLVER_CSV = LOOKUPS_DIR / 'profile_resolver.csv'
+PROFILE_DISCOVERY_RESOLVER_CSV = LOOKUPS_DIR / 'profile_discovery_resolver.csv'
 PROFILE_SRC_CSV = LOOKUPS_DIR / 'profile_source_field.csv'
 PROFILE_DST_CSV = LOOKUPS_DIR / 'profile_destination_field.csv'
 
@@ -7325,6 +7402,234 @@ def _graylog_api_post(path: str, json=None, **kwargs):
     headers['X-Requested-By'] = 'log-management-ui'
     timeout = kwargs.pop('timeout', 10)
     return requests.post(url, auth=auth, headers=headers, json=json, timeout=timeout, **kwargs)
+
+
+def _read_lookup_rows(csv_path: Path):
+    rows = []
+    if not csv_path.exists():
+        return rows
+    for line in csv_path.read_text(errors='replace').splitlines()[1:]:
+        if ',' not in line:
+            continue
+        key, value = line.split(',', 1)
+        key = key.strip()
+        value = value.strip()
+        if key:
+            rows.append((key, value))
+    return rows
+
+
+def _upsert_lookup_row(csv_path: Path, key: str, value: str):
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = _read_lookup_rows(csv_path)
+    updated = False
+    out = []
+    for k, v in rows:
+        if k == key:
+            out.append((k, value))
+            updated = True
+        else:
+            out.append((k, v))
+    if not updated:
+        out.append((key, value))
+    body = "key,value\n" + "".join(f"{k},{v}\n" for k, v in out)
+    csv_path.write_text(body, encoding='utf-8')
+    return updated
+
+
+def _run_graylog_post_init_once(timeout_sec: int = 240):
+    try:
+        proc = subprocess.run(
+            ['docker', 'compose', 'run', '--rm', '--no-deps', 'graylog-post-init'],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        output = ((proc.stdout or '') + "\n" + (proc.stderr or '')).strip()
+        return {'ok': proc.returncode == 0, 'returnCode': proc.returncode, 'output': output[-12000:], 'mode': 'subprocess'}
+    except FileNotFoundError:
+        pass
+
+    if not docker_available or docker_client is None:
+        return {'ok': False, 'returnCode': 127, 'output': 'docker CLI bulunamadı ve Docker API erişimi yok', 'mode': 'unavailable'}
+
+    host_root = _compose_heap_recreate_host_project_dir() or str(BASE_DIR)
+    cli_image = (os.environ.get('LOG_SYSTEM_DOCKER_CLI_IMAGE') or 'docker:26-cli').strip()
+    compose_file = (os.environ.get('LOG_SYSTEM_HEAP_COMPOSE_FILE') or 'docker-compose.yml').strip() or 'docker-compose.yml'
+    root_q = shlex.quote(str(Path(host_root).resolve()))
+    cf_q = shlex.quote(compose_file)
+    script = f'cd {root_q} && docker compose -f {cf_q} run --rm --no-deps graylog-post-init'
+    err, out = _compose_cli_exec(host_root, cli_image, script)
+    if err:
+        return {'ok': False, 'returnCode': 127, 'output': str(err)[-12000:], 'mode': 'docker_api'}
+    txt = out.decode('utf-8', errors='replace') if isinstance(out, (bytes, bytearray)) else str(out or '')
+    return {'ok': True, 'returnCode': 0, 'output': txt[-12000:], 'mode': 'docker_api'}
+
+
+def _normalization_event_fingerprint(msg: dict) -> str:
+    raw_message = _graylog_message_scalar(msg, 'message')
+    ts = _graylog_message_scalar(msg, 'timestamp') or _graylog_message_scalar(msg, '@timestamp')
+    sender = (
+        _graylog_message_scalar(msg, 'syslog_sender_ip')
+        or _graylog_message_scalar(msg, 'source')
+        or _graylog_message_scalar(msg, 'host')
+    )
+    base = f"{ts}|{sender}|{raw_message[:4000]}"
+    return hashlib.sha256(base.encode('utf-8')).hexdigest()[:24]
+
+
+def _normalization_discovery_parts(msg: dict):
+    sender = _normalization_clean_sender((
+        _graylog_message_scalar(msg, 'syslog_sender_ip')
+        or _graylog_message_scalar(msg, 'source')
+        or _graylog_message_scalar(msg, 'source_ip')
+        or '-'
+    ))
+    host = (_graylog_message_scalar(msg, 'host') or _graylog_message_scalar(msg, 'hostname') or '-').strip() or '-'
+    program = (
+        _graylog_message_scalar(msg, 'program')
+        or _graylog_message_scalar(msg, 'ident')
+        or _graylog_message_scalar(msg, 'app')
+        or '-'
+    ).strip() or '-'
+    log_source = (_graylog_message_scalar(msg, 'log_source') or '-').strip() or '-'
+    return {
+        'sender': sender.lower(),
+        'host': host.lower(),
+        'program': program.lower(),
+        'logSource': log_source.lower(),
+    }
+
+
+def _normalization_discovery_key(msg: dict) -> str:
+    p = _normalization_discovery_parts(msg)
+    return f"{p['sender']}|{p['host']}|{p['program']}|{p['logSource']}"
+
+
+def _normalization_parse_message_payload(raw_value):
+    """Best-effort parser for raw message JSON and KV, including escaped/nested strings."""
+    candidate = raw_value
+    for _ in range(3):
+        if isinstance(candidate, dict):
+            return candidate
+        if not isinstance(candidate, str):
+            return {}
+        text = candidate.strip()
+        if not text:
+            return {}
+        candidates = [text]
+        if '{' in text and '}' in text:
+            start = text.find('{')
+            end = text.rfind('}')
+            if 0 <= start < end:
+                candidates.append(text[start:end + 1])
+        parsed = None
+        for snippet in candidates:
+            try:
+                parsed = json.loads(snippet)
+                break
+            except Exception:
+                if '\\"' in snippet:
+                    try:
+                        parsed = json.loads(snippet.replace('\\"', '"'))
+                        break
+                    except Exception:
+                        continue
+                continue
+        if parsed is not None and isinstance(parsed, dict):
+            return parsed
+        if parsed is not None and isinstance(parsed, str):
+            candidate = parsed
+            continue
+            
+        # Try KV fallback if JSON fails
+        kv_parsed = {}
+        # Match pattern: key=value or key="value"
+        for match in re.finditer(r'([a-zA-Z0-9_.-]+)=(".*?"|\S+)', text):
+            k = match.group(1)
+            v = match.group(2)
+            if v.startswith('"') and v.endswith('"'):
+                v = v[1:-1]
+            kv_parsed[k] = v
+            
+        if kv_parsed and len(kv_parsed) >= 1:
+            return kv_parsed
+
+        return {}
+    return {}
+
+
+def _normalization_clean_sender(value) -> str:
+    s = str(value or '').strip()
+    if not s:
+        return '-'
+    s = re.sub(r'^[a-z]+://', '', s, flags=re.IGNORECASE)
+    if ':' in s and s.count(':') == 1:
+        left, right = s.rsplit(':', 1)
+        if right.isdigit():
+            s = left
+    if ' ' in s:
+        ip = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', s)
+        if ip:
+            s = ip.group(0)
+        else:
+            return '-'
+    if not re.match(r'^[A-Za-z0-9._:-]+$', s):
+        return '-'
+    return s.strip() or '-'
+
+
+def _normalization_guess_mapping_hints(raw_message: str, parsed_message: dict) -> dict:
+    text = f"{raw_message or ''} {json.dumps(parsed_message, ensure_ascii=False) if isinstance(parsed_message, dict) else ''}".lower()
+    vendor_hints = []
+    product_hints = []
+    if 'vmware' in text or 'vcsa' in text or 'vcenter' in text:
+        vendor_hints.append('vmware')
+    if 'cisco' in text or 'asa' in text:
+        vendor_hints.append('cisco')
+    if 'forti' in text or 'fortigate' in text:
+        vendor_hints.append('fortinet')
+    if 'paloalto' in text or 'panos' in text:
+        vendor_hints.append('paloalto')
+    if 'com.vmware.identity' in text or 'sts-perf' in text:
+        product_hints.append('vcenter')
+    if 'asa' in text:
+        product_hints.append('asa')
+    if 'fortigate' in text:
+        product_hints.append('fortigate')
+    # De-duplicate while preserving order.
+    vendor_hints = list(dict.fromkeys(vendor_hints))[:3]
+    product_hints = list(dict.fromkeys(product_hints))[:3]
+    return {'vendor': vendor_hints, 'product': product_hints}
+
+
+def _normalization_preview_message(raw_message: str, parsed_message: dict) -> str:
+    """Short and stable preview text for QC list cards."""
+    if isinstance(parsed_message, dict) and parsed_message:
+        preferred = ('event', 'message', 'msg', 'action', 'program', 'log_source')
+        for key in preferred:
+            value = parsed_message.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:220]
+        keys = [str(k) for k in parsed_message.keys()][:5]
+        return f"Alanlar: {', '.join(keys)}"
+    if isinstance(raw_message, str):
+        return raw_message.strip().replace('\n', ' ')[:220]
+    return ''
+
+
+def _normalization_merge_message_context(msg: dict, parsed_message: dict) -> dict:
+    """Merge top-level Graylog fields with parsed payload for discovery."""
+    merged = dict(msg or {})
+    if isinstance(parsed_message, dict):
+        for key in (
+            'syslog_sender_ip', 'source', 'source_ip', 'host', 'hostname',
+            'program', 'ident', 'app', 'log_source'
+        ):
+            if not _graylog_message_scalar(merged, key) and parsed_message.get(key) is not None:
+                merged[key] = parsed_message.get(key)
+    return merged
 
 
 def _ingest_pipeline_health_snapshot() -> dict:
@@ -7620,7 +7925,11 @@ def normalization_qc_samples():
                 'to': to_ts.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
             },
             'size': 20,
-            'fields': ['vendor', 'product', 'os_major', 'message', 'timestamp'],
+            'fields': [
+                'vendor', 'product', 'os_major', 'message', 'timestamp',
+                'syslog_sender_ip', 'source', 'source_ip', 'host', 'hostname',
+                'program', 'ident', 'app', 'log_source'
+            ],
         }
         search_resp = _graylog_api_post('/search/messages', json=search_payload, timeout=20)
         if search_resp.status_code != 200:
@@ -7650,15 +7959,121 @@ def normalization_qc_samples():
             key = (str(vendor).lower(), str(product).lower(), str(os_major).lower())
             if key not in seen:
                 seen.add(key)
+                raw_message = _graylog_message_scalar(msg, 'message')
+                parsed_message = _normalization_parse_message_payload(raw_message)
+                merged_msg = _normalization_merge_message_context(msg, parsed_message)
+                discovery_parts = _normalization_discovery_parts(merged_msg)
+                fingerprint = _normalization_event_fingerprint(merged_msg)
+                discovery_key = _normalization_discovery_key(merged_msg)
+                mapping_hints = _normalization_guess_mapping_hints(raw_message, parsed_message)
                 samples.append({
                     'vendor': str(vendor),
                     'product': str(product),
                     'os_major': str(os_major),
                     'lookupKey': f"{str(vendor).lower()}|{str(product).lower()}|{str(os_major)}",
+                    'discoveryKey': discovery_key,
+                    'discoveryParts': discovery_parts,
+                    'timestamp': _graylog_message_scalar(msg, 'timestamp'),
+                    'eventFingerprint': fingerprint,
+                    'rawMessage': raw_message[:2000] if isinstance(raw_message, str) else '',
+                    'sampleMessage': parsed_message if isinstance(parsed_message, dict) else {},
+                    'previewMessage': _normalization_preview_message(raw_message, parsed_message),
+                    'shortMessage': _normalization_preview_message(raw_message, parsed_message),
+                    'sampleId': f"{discovery_key}|{fingerprint[:8] if isinstance(fingerprint, str) else ''}",
+                    'deviceLabel': f"{discovery_parts.get('sender', '-')} / {discovery_parts.get('host', '-')}",
+                    'sender': discovery_parts.get('sender', '-'),
+                    'host': discovery_parts.get('host', '-'),
+                    'program': discovery_parts.get('program', '-'),
+                    'logSource': discovery_parts.get('logSource', '-'),
+                    'mappingHints': mapping_hints,
                 })
         return jsonify({'samples': samples, 'streamId': stream_id})
     except Exception as e:
         return jsonify({'samples': [], 'error': str(e)}), 500
+
+
+@app.route('/api/normalization/qc-field-candidates', methods=['GET'])
+@login_required
+@require_role('operator')
+def normalization_qc_field_candidates():
+    """Collect likely source/destination fields from recent quality_control message payloads."""
+    try:
+        streams_resp = _graylog_api_get('/streams')
+        streams_resp.raise_for_status()
+        streams = streams_resp.json().get('streams', [])
+        qc_stream = next((s for s in streams if s.get('title') == 'quality_control'), None)
+        if not qc_stream:
+            return jsonify({'sourceCandidates': [], 'destinationCandidates': [], 'message': 'quality_control stream not found'})
+
+        stream_id = qc_stream.get('id')
+        from_ts = datetime.utcnow() - timedelta(hours=24)
+        to_ts = datetime.utcnow()
+        payload = {
+            'query': '*',
+            'streams': [stream_id],
+            'timerange': {
+                'type': 'absolute',
+                'from': from_ts.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                'to': to_ts.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+            },
+            'size': 40,
+            'fields': ['message'],
+        }
+        resp = _graylog_api_post('/search/messages', json=payload, timeout=20)
+        if resp.status_code != 200:
+            return jsonify({'sourceCandidates': [], 'destinationCandidates': [], 'error': resp.text[:200]}), 500
+
+        data = resp.json()
+        schema = data.get('schema') or []
+        field_names = [
+            col.get('field')
+            for col in schema
+            if col.get('column_type') == 'field' and col.get('field')
+        ]
+        src_counts = {}
+        dst_counts = {}
+        ignored_fields = {
+            'source_policy', 'log_source', 'vendor', 'product', 'os_major',
+            'normalization_status', 'normalization_profile', 'message',
+            'event_fingerprint', 'normalization_discovery_key',
+            'normalization_lookup_key'
+        }
+        for row in data.get('datarows') or []:
+            msg = {}
+            for i, name in enumerate(field_names):
+                if i < len(row):
+                    msg[name] = row[i]
+            raw = str(_graylog_message_scalar(msg, 'message') or '').strip()
+            parsed = _normalization_parse_message_payload(raw)
+            if not isinstance(parsed, dict):
+                continue
+            for k in parsed.keys():
+                key = str(k)
+                low = key.lower()
+                if low in ignored_fields:
+                    continue
+                if 'src' in low or 'source' in low or low.endswith('_ip') or low == 'client_ip':
+                    src_counts[key] = src_counts.get(key, 0) + 1
+                if 'dst' in low or 'dest' in low or 'target' in low or low == 'server_ip':
+                    dst_counts[key] = dst_counts.get(key, 0) + 1
+
+        src_total = sum(src_counts.values()) or 1
+        dst_total = sum(dst_counts.values()) or 1
+        source_candidates = [
+            {'field': k, 'count': c, 'score': round((c / src_total) * 100, 2)}
+            for k, c in sorted(src_counts.items(), key=lambda x: (-x[1], x[0]))[:30]
+        ]
+        destination_candidates = [
+            {'field': k, 'count': c, 'score': round((c / dst_total) * 100, 2)}
+            for k, c in sorted(dst_counts.items(), key=lambda x: (-x[1], x[0]))[:30]
+        ]
+        return jsonify({
+            'sourceCandidates': source_candidates,
+            'destinationCandidates': destination_candidates,
+            'streamId': stream_id,
+        })
+    except Exception as e:
+        return jsonify({'sourceCandidates': [], 'destinationCandidates': [], 'error': str(e)}), 500
 
 
 @app.route('/api/normalization/lookup-rows', methods=['GET'])
@@ -7700,11 +8115,13 @@ def normalization_dry_run():
     profile = (payload.get('profile') or '').strip() or f"{vendor}_{product}_v{os_major}"
     src_field = (payload.get('srcField') or 'src').strip()
     dst_field = (payload.get('dstField') or 'dst').strip()
+    discovery_key = str(payload.get('discoveryKey') or '').strip().lower()
     sample = payload.get('sampleMessage') or {}
 
     if not vendor or not product:
         return jsonify({'error': 'vendor and product required'}), 400
 
+    lookup_key = f"{vendor}|{product}|{os_major}"
     preview = dict(sample)
     preview['profile'] = profile
     preview['normalization_status'] = 'success'
@@ -7716,7 +8133,17 @@ def normalization_dry_run():
         dst_val = sample.get(dst_field) or sample.get('dst') or sample.get('destination') or 'unknown'
         preview['source'] = src_val
         preview['destination'] = dst_val
-    return jsonify({'preview': preview, 'profile': profile})
+    return jsonify({
+        'preview': preview,
+        'profile': profile,
+        'lookupKey': lookup_key,
+        'rowsPreview': {
+            'resolver': f"{lookup_key},{profile}",
+            'discoveryResolver': f"{discovery_key},{profile}" if discovery_key else '',
+            'source': f"{profile},{src_field}",
+            'destination': f"{profile},{dst_field}",
+        },
+    })
 
 
 @app.route('/api/normalization/add-mapping', methods=['POST'])
@@ -7732,61 +8159,438 @@ def normalization_add_mapping():
     profile = (payload.get('profile') or '').strip() or f"{vendor}_{product}_v{os_major}"
     src_field = (payload.get('srcField') or 'src').strip()
     dst_field = (payload.get('dstField') or 'dst').strip()
+    discovery_key = str(payload.get('discoveryKey') or '').strip().lower()
+    confirmation = payload.get('confirmation') or {}
+    sample_fingerprint = str(payload.get('sampleFingerprint') or '').strip()
+    typed = str(confirmation.get('typed') or '').strip().upper()
+    password = str(confirmation.get('password') or '')
 
     if not vendor or not product:
         return jsonify({'error': 'vendor and product required'}), 400
+    if not discovery_key:
+        return jsonify({'error': 'discoveryKey zorunlu'}), 400
+    if not re.match(r'^[A-Za-z0-9_.-]+$', os_major):
+        return jsonify({'error': 'invalid os_major'}), 400
+    if not re.match(r'^[A-Za-z0-9_.-]+$', profile):
+        return jsonify({'error': 'invalid profile'}), 400
+    if not re.match(r'^[A-Za-z0-9_.-]+$', src_field) or not re.match(r'^[A-Za-z0-9_.-]+$', dst_field):
+        return jsonify({'error': 'invalid source/destination field'}), 400
+    if typed != 'ONAYLA' or not password:
+        return jsonify({'error': 'ONAYLA + şifre zorunlu'}), 400
+    username = session.get('username') or ''
+    user = get_user(username)
+    if not user or not check_password_hash(user.get('password_hash', ''), password):
+        audit_event('normalization.add_mapping', 'failed', {
+            'by': username or 'unknown',
+            'reason': 'invalid_password',
+            'fingerprint': sample_fingerprint or None,
+        })
+        return jsonify({'error': 'Şifre doğrulaması başarısız'}), 401
 
     lookup_key = f"{vendor}|{product}|{os_major}"
-    new_line = f"{lookup_key},{profile}\n"
-
-    written = False
     try:
-        PROFILE_RESOLVER_CSV.parent.mkdir(parents=True, exist_ok=True)
-        if not PROFILE_RESOLVER_CSV.exists():
-            PROFILE_RESOLVER_CSV.write_text("key,value\n")
-        with open(PROFILE_RESOLVER_CSV, 'a') as f:
-            f.write(new_line)
-        written = True
-    except OSError as e:
-        pass
+        discovery_rows = _read_lookup_rows(PROFILE_DISCOVERY_RESOLVER_CSV)
+        for k, v in discovery_rows:
+            if k == discovery_key and v != profile:
+                return jsonify({'error': f'duplicate discovery key: {discovery_key} already maps to {v}'}), 409
 
-    if written:
-        for csv_path, default_val, row in [
-            (PROFILE_SRC_CSV, 'src', f"{profile},{src_field}\n"),
-            (PROFILE_DST_CSV, 'dst', f"{profile},{dst_field}\n"),
-        ]:
-            try:
-                if csv_path.exists():
-                    content = csv_path.read_text()
-                    if profile not in content:
-                        with open(csv_path, 'a') as f:
-                            f.write(row)
-                else:
-                    csv_path.parent.mkdir(parents=True, exist_ok=True)
-                    csv_path.write_text(f"key,value\n{row}")
-            except OSError:
-                pass
+        resolver_rows = _read_lookup_rows(PROFILE_RESOLVER_CSV)
+        for k, v in resolver_rows:
+            if k == lookup_key and v != profile:
+                return jsonify({'error': f'duplicate lookup key: {lookup_key} already maps to {v}'}), 409
+
+        updated_resolver = _upsert_lookup_row(PROFILE_RESOLVER_CSV, lookup_key, profile)
+        updated_discovery_resolver = _upsert_lookup_row(PROFILE_DISCOVERY_RESOLVER_CSV, discovery_key, profile)
+        _upsert_lookup_row(PROFILE_SRC_CSV, profile, src_field)
+        _upsert_lookup_row(PROFILE_DST_CSV, profile, dst_field)
+        post_init = _run_graylog_post_init_once()
 
         audit_event('normalization.add_mapping', 'success', {
+            'by': username or 'unknown',
+            'fingerprint': sample_fingerprint or None,
             'lookupKey': lookup_key,
+            'discoveryKey': discovery_key,
             'profile': profile,
+            'srcField': src_field,
+            'dstField': dst_field,
+            'updatedResolver': updated_resolver,
+            'updatedDiscoveryResolver': updated_discovery_resolver,
+            'postInitOk': bool(post_init.get('ok')),
+        })
+        status = 200 if post_init.get('ok') else 502
+        return jsonify({
+            'message': 'Mapping uygulandı ve post-init çalıştırıldı.' if post_init.get('ok') else 'Mapping yazıldı fakat post-init başarısız.',
+            'written': True,
+            'sampleFingerprint': sample_fingerprint or None,
+            'lookupKey': lookup_key,
+            'discoveryKey': discovery_key,
+            'profile': profile,
+            'updatedResolver': updated_resolver,
+            'updatedDiscoveryResolver': updated_discovery_resolver,
+            'postInit': post_init,
+            'verificationQuery': f'normalization_status:success AND normalization_discovery_key:\"{discovery_key}\"',
+        }), status
+    except subprocess.TimeoutExpired:
+        audit_event('normalization.add_mapping', 'failed', {
+            'by': username or 'unknown',
+            'fingerprint': sample_fingerprint or None,
+            'lookupKey': lookup_key,
+            'discoveryKey': discovery_key,
+            'profile': profile,
+            'reason': 'post_init_timeout',
+        })
+        return jsonify({'error': 'graylog-post-init timeout'}), 504
+    except Exception as e:
+        audit_event('normalization.add_mapping', 'failed', {
+            'by': username or 'unknown',
+            'fingerprint': sample_fingerprint or None,
+            'lookupKey': lookup_key,
+            'discoveryKey': discovery_key,
+            'profile': profile,
+            'reason': str(e),
+        })
+        return jsonify({'error': str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Vendor Pack (Dynamic Grok Parser) API
+# ---------------------------------------------------------------------------
+VENDOR_PACKS_JSON = LOOKUPS_DIR / 'vendor_packs.json'
+
+
+def _load_vendor_packs() -> list:
+    """Load saved vendor packs from JSON storage."""
+    if not VENDOR_PACKS_JSON.exists():
+        return []
+    try:
+        return json.loads(VENDOR_PACKS_JSON.read_text(encoding='utf-8'))
+    except Exception:
+        return []
+
+
+def _save_vendor_packs(packs: list):
+    """Persist vendor packs to JSON storage."""
+    VENDOR_PACKS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    VENDOR_PACKS_JSON.write_text(json.dumps(packs, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _build_graylog_rule_body(vendor: str, product: str, grok_pattern: str) -> str:
+    """Build a safe Graylog Pipeline Rule DSL string for a vendor-specific grok pack."""
+    rule_name = f"VendorPack {vendor.title()} {product.title()}"
+    vendor_safe = vendor.lower().replace('"', '')
+    product_safe = product.lower().replace('"', '')
+    # Escape backslashes and double-quotes for Graylog rule DSL string literal
+    pattern_escaped = grok_pattern.replace('\\', '\\\\').replace('"', '\\"')
+    return (
+        f'rule "{rule_name}"\n'
+        f'when\n'
+        f'  has_field("vendor") AND lowercase(to_string($message.vendor)) == "{vendor_safe}"\n'
+        f'  AND has_field("product") AND lowercase(to_string($message.product)) == "{product_safe}"\n'
+        f'then\n'
+        f'  let g = grok(pattern: "{pattern_escaped}", value: to_string($message.message), only_named_captures: true);\n'
+        f'  set_fields(g);\n'
+        f'end'
+    )
+
+
+def _upsert_graylog_pipeline_rule(rule_name: str, rule_source: str) -> dict:
+    """Create or update a Graylog pipeline rule via REST API."""
+    resp = _graylog_api_get('/system/pipelines/rule', timeout=10)
+    existing_id = None
+    if resp.status_code == 200:
+        for rule in (resp.json() or []):
+            if rule.get('title') == rule_name:
+                existing_id = rule.get('id')
+                break
+
+    payload = {'title': rule_name, 'description': f'Auto-generated by VendorPack UI', 'source': rule_source}
+    if existing_id:
+        r = requests.put(
+            f"http://graylog:9000/api/system/pipelines/rule/{existing_id}",
+            auth=('admin', os.environ.get('GRAYLOG_ROOT_PASSWORD', 'admin')),
+            headers={'X-Requested-By': 'log-management-ui'},
+            json=payload, timeout=15
+        )
+    else:
+        r = _graylog_api_post('/system/pipelines/rule', json=payload, timeout=15)
+    r.raise_for_status()
+    return r.json()
+
+
+def _inject_rule_into_ecs_pipeline(rule_name: str):
+    """Inject a rule reference into Stage 1 of the ECS Normalization Pipeline."""
+    pipelines_resp = _graylog_api_get('/system/pipelines/pipeline', timeout=10)
+    if pipelines_resp.status_code != 200:
+        return False
+    pipelines = pipelines_resp.json() or []
+    pipeline = next((p for p in pipelines if p.get('title') == 'ECS Normalization Pipeline'), None)
+    if not pipeline:
+        return False
+
+    pid = pipeline['id']
+    source: str = pipeline.get('source', '')
+
+    marker = 'stage 1 match either'
+    insertion = f'  rule "{rule_name}";'
+    if insertion in source:
+        return True  # already injected
+
+    # Insert right after "stage 1 match either" line
+    lines = source.split('\n')
+    new_lines = []
+    for line in lines:
+        new_lines.append(line)
+        if line.strip() == marker:
+            new_lines.append(insertion)
+    new_source = '\n'.join(new_lines)
+
+    update_payload = {
+        'title': pipeline.get('title'),
+        'description': pipeline.get('description', ''),
+        'source': new_source,
+    }
+    r = requests.put(
+        f"http://graylog:9000/api/system/pipelines/pipeline/{pid}",
+        auth=('admin', os.environ.get('GRAYLOG_ROOT_PASSWORD', 'admin')),
+        headers={'X-Requested-By': 'log-management-ui'},
+        json=update_payload, timeout=15
+    )
+    return r.status_code in (200, 204)
+
+
+def _remove_rule_from_ecs_pipeline(rule_name: str):
+    """Remove a rule reference from Stage 1 of the ECS Normalization Pipeline."""
+    pipelines_resp = _graylog_api_get('/system/pipelines/pipeline', timeout=10)
+    if pipelines_resp.status_code != 200:
+        return False
+    pipelines = pipelines_resp.json() or []
+    pipeline = next((p for p in pipelines if p.get('title') == 'ECS Normalization Pipeline'), None)
+    if not pipeline:
+        return False
+
+    pid = pipeline['id']
+    source: str = pipeline.get('source', '')
+    insertion = f'  rule "{rule_name}";'
+    if insertion not in source:
+        return True  # already gone
+
+    new_source = '\n'.join(line for line in source.split('\n') if line.strip() != insertion.strip())
+    update_payload = {
+        'title': pipeline.get('title'),
+        'description': pipeline.get('description', ''),
+        'source': new_source,
+    }
+    r = requests.put(
+        f"http://graylog:9000/api/system/pipelines/pipeline/{pid}",
+        auth=('admin', os.environ.get('GRAYLOG_ROOT_PASSWORD', 'admin')),
+        headers={'X-Requested-By': 'log-management-ui'},
+        json=update_payload, timeout=15
+    )
+    return r.status_code in (200, 204)
+
+
+@app.route('/api/normalization/vendor-packs', methods=['GET'])
+@login_required
+@require_role('operator')
+def get_vendor_packs():
+    """Return all saved vendor packs."""
+    try:
+        return jsonify({'packs': _load_vendor_packs()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/normalization/grok-test', methods=['POST'])
+@login_required
+@require_role('operator')
+def normalization_grok_test():
+    """Test a Grok pattern against a sample message string locally (Python regex simulation)."""
+    try:
+        import re as _re
+        payload = request.json or {}
+        pattern = (payload.get('pattern') or '').strip()
+        message = (payload.get('message') or '').strip()
+        if not pattern or not message:
+            return jsonify({'error': 'pattern and message required'}), 400
+
+        # Translate basic Grok patterns to Python regex for preview
+        GROK_BUILTINS = {
+            'GREEDYDATA': r'.*',
+            'DATA': r'.*?',
+            'WORD': r'\w+',
+            'NUMBER': r'(?:\d+(?:\.\d+)?)',
+            'INT': r'(?:[+-]?(?:[0-9]+))',
+            'IP': r'(?:\d{1,3}\.){3}\d{1,3}',
+            'IPORHOST': r'(?:\d{1,3}\.){3}\d{1,3}|\w[\w\.\-]*',
+            'HOSTNAME': r'\b(?:[0-9A-Za-z][0-9A-Za-z\-]{0,62})(?:\.(?:[0-9A-Za-z][0-9A-Za-z\-]{0,62}))*\.?\b',
+            'TIME': r'(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:[.,]\d+)?',
+            'DATE_EU': r'\d{1,2}[./-]\d{1,2}[./-]\d{2,4}',
+            'SYSLOGTIMESTAMP': r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}',
+            'NOTSPACE': r'\S+',
+            'SPACE': r'\s*',
+            'POSINT': r'\b(?:[1-9][0-9]*)\b',
+            'NONNEGINT': r'\b(?:[0-9]+)\b',
+            'BASE10NUM': r'(?:[+-]?(?:(?:[0-9]+(?:\.[0-9]+)?)|(?:\.[0-9]+)))',
+            'USERNAME': r'[a-zA-Z0-9._-]+',
+            'USER': r'[a-zA-Z0-9._-]+',
+            'URI': r'\S+',
+        }
+
+        def translate_grok(grok_pattern: str) -> tuple:
+            """Convert %{TYPE:name} patterns to Python named groups."""
+            fields = []
+            def replacer(m):
+                gtype = m.group(1)
+                name = m.group(2) if m.group(2) else None
+                regex = GROK_BUILTINS.get(gtype, r'.+?')
+                if name:
+                    fields.append(name)
+                    return f'(?P<{name}>{regex})'
+                return f'(?:{regex})'
+            py_pattern = _re.sub(r'%\{(\w+)(?::(\w+))?\}', replacer, grok_pattern)
+            return py_pattern, fields
+
+        py_pattern, fields = translate_grok(pattern)
+        try:
+            m = _re.match(py_pattern, message)
+        except _re.error as rex:
+            return jsonify({'match': False, 'error': f'Geçersiz regex: {rex}', 'captures': {}}), 200
+
+        if m:
+            captures = {k: v for k, v in m.groupdict().items() if v is not None}
+            return jsonify({'match': True, 'captures': captures, 'fields': fields, 'pythonPattern': py_pattern})
+        else:
+            return jsonify({'match': False, 'captures': {}, 'fields': fields, 'pythonPattern': py_pattern, 'hint': 'Eşleşme bulunamadı. Deseni ve örnek logu kontrol edin.'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/normalization/vendor-pack', methods=['POST'])
+@login_required
+@require_role('admin')
+@csrf_protect
+def add_vendor_pack():
+    """Save a new Grok-based vendor pack and inject it into the Graylog pipeline."""
+    payload = request.json or {}
+    vendor = (payload.get('vendor') or '').strip().lower()
+    product = (payload.get('product') or '').strip().lower()
+    grok_pattern = (payload.get('grokPattern') or '').strip()
+    description = (payload.get('description') or '').strip()
+    confirmation = payload.get('confirmation') or {}
+    typed = str(confirmation.get('typed') or '').strip().upper()
+    password = str(confirmation.get('password') or '')
+    username = session.get('username') or ''
+
+    if not vendor or not product:
+        return jsonify({'error': 'vendor ve product zorunludur'}), 400
+    if not grok_pattern:
+        return jsonify({'error': 'grokPattern zorunludur'}), 400
+    if not re.match(r'^[A-Za-z0-9_.\- ]+$', vendor) or not re.match(r'^[A-Za-z0-9_.\- ]+$', product):
+        return jsonify({'error': 'vendor ve product yalnızca harf, rakam, tire ve alt çizgi içerebilir'}), 400
+    if typed != 'ONAYLA' or not password:
+        return jsonify({'error': 'ONAYLA ve şifre zorunludur'}), 403
+    user = get_user(username)
+    if not user or not check_password_hash(user.get('password_hash', ''), password):
+        audit_event('vendor_pack.add', 'failed', {'by': username, 'reason': 'invalid_password'})
+        return jsonify({'error': 'Şifre doğrulaması başarısız'}), 401
+
+    rule_name = f"VendorPack {vendor.title()} {product.title()}"
+    pack_id = f"{vendor}|{product}"
+    try:
+        # 1. Save to local JSON store
+        packs = _load_vendor_packs()
+        existing = next((p for p in packs if p.get('id') == pack_id), None)
+        if existing:
+            existing['grokPattern'] = grok_pattern
+            existing['description'] = description
+            existing['updatedAt'] = datetime.utcnow().isoformat()
+        else:
+            packs.append({
+                'id': pack_id,
+                'vendor': vendor,
+                'product': product,
+                'grokPattern': grok_pattern,
+                'description': description,
+                'ruleName': rule_name,
+                'createdAt': datetime.utcnow().isoformat(),
+                'updatedAt': datetime.utcnow().isoformat(),
+            })
+        _save_vendor_packs(packs)
+
+        # 2. Upsert Graylog pipeline rule
+        rule_source = _build_graylog_rule_body(vendor, product, grok_pattern)
+        rule_resp = _upsert_graylog_pipeline_rule(rule_name, rule_source)
+
+        # 3. Inject into pipeline Stage 1
+        injected = _inject_rule_into_ecs_pipeline(rule_name)
+
+        audit_event('vendor_pack.add', 'success', {
+            'by': username, 'vendor': vendor, 'product': product,
+            'ruleName': rule_name, 'injected': injected
         })
         return jsonify({
-            'message': 'Mapping added. Lookup will refresh within 60 seconds.',
-            'written': True,
-            'lookupKey': lookup_key,
-            'profile': profile,
+            'message': f'"{rule_name}" başarıyla eklendi ve pipeline\'a enjekte edildi.',
+            'ruleName': rule_name,
+            'graylogRuleId': rule_resp.get('id'),
+            'pipelineInjected': injected,
         })
+    except Exception as e:
+        audit_event('vendor_pack.add', 'failed', {'by': username, 'reason': str(e)})
+        return jsonify({'error': str(e)}), 500
 
-    manual_line = new_line.strip()
-    return jsonify({
-        'message': 'Panel cannot write to lookup files. Add manually:',
-        'written': False,
-        'manualStepRequired': True,
-        'file': str(PROFILE_RESOLVER_CSV),
-        'lineToAdd': manual_line,
-        'instruction': f"Append to {PROFILE_RESOLVER_CSV}: {manual_line}",
-    })
+
+@app.route('/api/normalization/vendor-pack/<path:pack_id>', methods=['DELETE'])
+@login_required
+@require_role('admin')
+@csrf_protect
+def delete_vendor_pack(pack_id):
+    """Remove a vendor pack and its pipeline rule."""
+    confirmation = (request.json or {}).get('confirmation') or {}
+    typed = str(confirmation.get('typed') or '').strip().upper()
+    password = str(confirmation.get('password') or '')
+    username = session.get('username') or ''
+
+    if typed != 'ONAYLA' or not password:
+        return jsonify({'error': 'ONAYLA ve şifre zorunludur'}), 403
+    user = get_user(username)
+    if not user or not check_password_hash(user.get('password_hash', ''), password):
+        return jsonify({'error': 'Şifre doğrulaması başarısız'}), 401
+
+    try:
+        packs = _load_vendor_packs()
+        pack = next((p for p in packs if p.get('id') == pack_id), None)
+        if not pack:
+            return jsonify({'error': f'Vendor pack bulunamadı: {pack_id}'}), 404
+
+        rule_name = pack.get('ruleName', '')
+
+        # Remove from pipeline
+        _remove_rule_from_ecs_pipeline(rule_name)
+
+        # Delete Graylog pipeline rule
+        try:
+            rules_resp = _graylog_api_get('/system/pipelines/rule', timeout=10)
+            if rules_resp.status_code == 200:
+                for rule in (rules_resp.json() or []):
+                    if rule.get('title') == rule_name:
+                        rid = rule.get('id')
+                        requests.delete(
+                            f"http://graylog:9000/api/system/pipelines/rule/{rid}",
+                            auth=('admin', os.environ.get('GRAYLOG_ROOT_PASSWORD', 'admin')),
+                            headers={'X-Requested-By': 'log-management-ui'},
+                            timeout=10
+                        )
+                        break
+        except Exception:
+            pass
+
+        # Remove from local JSON
+        _save_vendor_packs([p for p in packs if p.get('id') != pack_id])
+
+        audit_event('vendor_pack.delete', 'success', {'by': username, 'packId': pack_id, 'ruleName': rule_name})
+        return jsonify({'message': f'"{rule_name}" silindi.'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/release/status', methods=['GET'])
@@ -8596,6 +9400,19 @@ def ingest_syslog_sources_summary():
     rng = request.args.get('range', default=604800, type=int)
     rng = max(300, min(rng or 604800, 2592000))
     snap = _collect_syslog_senders_from_graylog(range_sec=rng, sample_size=450)
+    trusted = _read_syslog_trusted_sources()
+    trusted_l = {str(x).lower() for x in trusted}
+    emitters = snap.get('emitters') or []
+    if isinstance(emitters, list):
+        for em in emitters:
+            ip = str((em or {}).get('ip') or '').strip().lower()
+            if not ip:
+                em['trusted'] = False
+                continue
+            em['trusted'] = ip in trusted_l
+    unknown_count = 0
+    if isinstance(emitters, list):
+        unknown_count = sum(1 for em in emitters if not bool((em or {}).get('trusted')))
     gl_base = (os.environ.get('GRAYLOG_WEB_URL') or '').strip().rstrip('/') or None
     return jsonify(
         {
@@ -8603,10 +9420,13 @@ def ingest_syslog_sources_summary():
             'query': snap.get('query'),
             'senders': snap.get('senders') or [],
             'remoteSenders': snap.get('remoteSenders') or [],
-            'emitters': snap.get('emitters') or [],
+            'emitters': emitters if isinstance(emitters, list) else [],
             'sampleRows': snap.get('sampleRows') or 0,
             'error': snap.get('error'),
             'graylogWebBase': gl_base,
+            'trustedSources': trusted,
+            'trustedSourcesCount': len(trusted),
+            'unknownEmitterCount': int(unknown_count),
             'ipHint': (
                 'Fluent Bit artık syslog için transport katmanındaki adresi `syslog_sender_ip` alanına yazar '
                 '(5651 izlenebilirlik). Graylog `gl2_remote_ip` çoğu kurulumda GELF ile mesajı ileten '
@@ -8616,6 +9436,69 @@ def ingest_syslog_sources_summary():
             ),
         }
     )
+
+
+@app.route('/api/security/syslog-trusted-sources', methods=['GET'])
+@login_required
+@require_role('operator')
+def get_syslog_trusted_sources():
+    items = _read_syslog_trusted_sources()
+    return jsonify(
+        {
+            'defaultPolicy': 'drop',
+            'ingestScope': 'all',
+            'sources': items,
+            'count': len(items),
+            'path': str(SYSLOG_TRUSTED_SOURCES_PATH),
+        }
+    )
+
+
+@app.route('/api/security/syslog-trusted-sources', methods=['POST'])
+@login_required
+@require_role('admin')
+@csrf_protect
+def set_syslog_trusted_sources():
+    payload = request.json or {}
+    sources = payload.get('sources', [])
+    if not isinstance(sources, list):
+        return jsonify({'error': 'sources must be an array'}), 400
+    current_items = _read_syslog_trusted_sources()
+    current_set = {str(x).strip().lower() for x in current_items}
+    next_set = {str(x).strip().lower() for x in sources if str(x or '').strip()}
+    removed = [item for item in current_items if str(item).strip().lower() not in next_set]
+
+    if removed:
+        rc = payload.get('removalConfirmation') or {}
+        typed = str(rc.get('typed') or '').strip().upper()
+        password = str(rc.get('password') or '')
+        if typed != 'ONAYLA' or not password:
+            return jsonify({'error': 'Removal confirmation required (ONAYLA + password)'}), 400
+        username = session.get('username') or ''
+        user = get_user(username)
+        if not user or not check_password_hash(user.get('password_hash', ''), password):
+            audit_event(
+                'security.syslog_trusted_sources.update',
+                'failed',
+                {'by': username or 'unknown', 'reason': 'invalid_password', 'removedSources': removed},
+            )
+            return jsonify({'error': 'Şifre doğrulaması başarısız'}), 401
+
+    _write_syslog_trusted_sources(sources)
+    updated = _read_syslog_trusted_sources()
+    added = [item for item in updated if str(item).strip().lower() not in current_set]
+    audit_event(
+        'security.syslog_trusted_sources.update',
+        'success',
+        {
+            'count': len(updated),
+            'ingestScope': 'all',
+            'by': session.get('username', 'unknown'),
+            'removedSources': removed,
+            'addedSources': added,
+        },
+    )
+    return jsonify({'message': 'Trusted syslog sources updated', 'sources': updated, 'count': len(updated)})
 
 
 @app.route('/api/ingest/syslog-drilldown', methods=['GET'])

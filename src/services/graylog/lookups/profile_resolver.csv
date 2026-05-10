@@ -1,0 +1,14 @@
+key,value
+cisco|asa|9,cisco_asa_v9
+fortinet|fortigate|6,fortigate_v6
+fortinet|fortigate|7,fortigate_v7
+juniper|srx|22,srx_v22
+linux|linux|generic,linux_syslog_generic
+linux|ubuntu|22,linux_ubuntu_22
+microsoft|windows|10,win_generic_v10
+microsoft|windows|11,win_generic_v11
+mikrotik|routeros|6,mikrotik_ros_v6
+mikrotik|routeros|7,mikrotik_ros_v7
+paloalto|panos|10,panos_v10
+paloalto|panos|11,panos_v11
+unknown|unknown|unknown,unknown

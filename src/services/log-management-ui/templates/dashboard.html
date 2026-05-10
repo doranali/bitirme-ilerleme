@@ -2373,6 +2373,10 @@
                     <i class="fas fa-network-wired"></i>
                     <span>Uç envanteri</span>
                 </a>
+                <a class="nav-item" data-tab="normalization" onclick="switchTab('normalization')">
+                    <i class="fas fa-brain"></i>
+                    <span>Normalizasyon</span>
+                </a>
                 <a class="nav-item" data-tab="settings" onclick="switchTab('settings')">
                     <i class="fas fa-cog"></i>
                     <span>Ayarlar</span>
@@ -2749,7 +2753,7 @@
             <div id="agent-fleet" class="tab-content">
                 <div class="section-title">
                     <h3>Uç nokta envanteri</h3>
-                    <p>Kayıtlı hostlar, Graylog hacmi ve kurulum / token yönetimi</p>
+                    <p>Kayıtlı hostlar, log görünürlüğü ve kurulum işlemleri</p>
                 </div>
 
                 <div class="card settings-card-block fleet-inventory-card" style="margin-bottom: 1rem;">
@@ -2763,16 +2767,38 @@
                             <button type="button" class="btn btn-sm btn-secondary" id="agent-refresh-btn" title="Graylog sayıları + token listesi"><i class="fas fa-rotate"></i> Yenile</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="agent-fleet-repair-btn" title="nodes.json dosyasını enrollment (aktif token + activatedNode) ile hizalar"><i class="fas fa-database"></i> Disk eşitle</button>
                         </div>
-                        <p class="help-text" style="margin:0 0 0.35rem 0; font-size:0.82rem;">Liste boşsa: <strong>Operatör</strong> rolüyle giriş yapın; kurulumdan sonra <strong>Yenile</strong>. Hâlâ yoksa <strong>Disk eşitle</strong> (token kaydından uç satırı yazar). TLS / sertifika özeti için <strong>Ayarlar</strong> sekmesi.</p>
-                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Kopuk veya hayalet satır: satıra tıklayıp açılan pencerede <strong>Listeden kaldır</strong> — panel ve <code>nodes.json</code> temizlenir; token kalır (ajan yeniden bağlanırsa satır dönebilir; kalıcı iptal için token iptali).</p>
-                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;"><strong>Panel «Güncel»</strong> yalnızca panele gelen <em>heartbeat</em>’i gösterir. <strong>24 saat / 7 gün</strong> sütunları Graylog’taki mesaj sayısıdır; «—» ise o sürede eşleşen log yok veya Graylog sorgusu hata verdi (hücre üzerine gelin). Doğrudan doğrulama: Graylog aramasında <code>host:MAKINE_ADI</code> veya <code>source:MAKINE_ADI</code>.</p>
-                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;"><strong>Syslog-only cihazlar</strong> (vCenter, firewall) token/aktivasyon yapmadığı için üstteki «Kayıtlı uç noktalar» listesine <em>otomatik satır eklenmez</em>; loglar doğrudan Graylog’a gider. Özet için aşağıdaki Graylog özeti kullanılır.</p>
+                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.84rem;">
+                            Boş liste için önce <strong>Yenile</strong>, gerekirse <strong>Disk eşitle</strong>. Satıra tıklayarak detayları yönetebilirsiniz.
+                        </p>
+                        <details class="help-text" style="margin:0 0 0.55rem 0;">
+                            <summary style="cursor:pointer; font-weight:600;">Detaylı açıklama (isteğe bağlı)</summary>
+                            <div style="margin-top:0.35rem; line-height:1.5;">
+                                <div><strong>Güncel:</strong> panel heartbeat durumunu gösterir.</div>
+                                <div><strong>24 saat / 7 gün:</strong> Graylog mesaj sayısıdır.</div>
+                                <div><strong>Syslog-only cihazlar:</strong> envanter tablosuna otomatik eklenmeyebilir; alttaki Graylog özetinden izlenir.</div>
+                            </div>
+                        </details>
                         <div id="agent-heartbeat-summary" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
                         <div id="agent-node-summary" class="settings-summary" style="margin-bottom:0.55rem;">—</div>
                         <div id="fleet-hosts-table" class="help-text">Yükleniyor…</div>
                         <h5 style="margin:1rem 0 0.35rem 0; font-size:0.95rem;">Syslog / kayıtlı ağ görünürlüğü (Graylog)</h5>
-                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Son 7 gün, <code>log_type:network</code>. <strong>Önce transport IP</strong> (çoğu saha: vCenter); başlığa tıklayınca o IP’den gelen servis (<code>source</code>) dağılımı; servis satırına tıklayınca örnek loglar. <code>source</code> tek fiziksel kutu değildir. İstemci adresi için <code>syslog_sender_ip</code> önceliklidir.</p>
+                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Son 7 günün network log özeti. Satıra tıklayarak servis dağılımı ve örnek kayıtları görebilirsiniz.</p>
                         <div id="fleet-syslog-sources" class="help-text">—</div>
+                        <div style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border);">
+                            <h5 style="margin:0 0 0.35rem 0; font-size:0.95rem;">Kayıtlı Syslog Kaynakları</h5>
+                            <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Politika: kayıt dışı kaynaklar düşürülür. Yeni kaynak eklemeden log kabul edilmez.</p>
+                            <div id="syslog-ingest-guard-status" class="settings-summary" style="margin:0 0 0.5rem 0; font-size:0.82rem;">—</div>
+                            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.5rem;">
+                                <input id="syslog-trusted-source-input" class="input-search" type="text" placeholder="Örn: 10.10.100.10 veya vcenter.local" style="min-width:240px; flex:1;">
+                                <button type="button" class="btn btn-sm btn-primary" id="syslog-trusted-source-add-btn"><i class="fas fa-plus"></i> Ekle</button>
+                                <button type="button" class="btn btn-sm btn-secondary" id="syslog-trusted-sources-refresh-btn"><i class="fas fa-rotate"></i> Yenile</button>
+                            </div>
+                            <div id="syslog-trusted-sources-list" class="settings-summary" style="margin-bottom:0.5rem;">Yükleniyor…</div>
+                            <div id="syslog-trusted-sources-draft-status" class="help-text" style="margin:0 0 0.5rem 0; font-size:0.8rem;">—</div>
+                            <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
+                                <button type="button" class="btn btn-sm btn-success" id="syslog-trusted-sources-save-btn"><i class="fas fa-save"></i> Kaydet</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -2782,7 +2808,7 @@
                         <span class="badge badge-success">Sihirbaz · gelişmiş</span>
                     </div>
                     <div class="card-body">
-                        <p class="help-text" style="margin-top:0;">Profil → tek token → tek kurulum bağlantısı (<code>.sh</code> Linux, <code>.ps1</code> Windows). Fluent Bit ajanı: merkeze <strong>UDP 5151 JSON</strong>. vCenter / firewall syslog: aynı merkez IP’de <strong>UDP veya TCP 1514</strong> (ekstra relay isteğe bağlı). Token için <strong>admin</strong>.</p>
+                        <p class="help-text" style="margin-top:0;">Sihirbaz adımlarını izleyin: profil seçin, token üretin, kurulum komutunu kopyalayın. (Admin yetkisi gerekir.)</p>
                         <div class="agent-fleet-mode-switch" role="tablist" aria-label="Kurulum görünümü">
                             <button type="button" class="btn btn-sm btn-primary agent-fleet-mode-btn active" id="agent-fleet-mode-wizard" data-mode="wizard" role="tab" aria-selected="true">Sihirbaz</button>
                             <button type="button" class="btn btn-sm btn-secondary agent-fleet-mode-btn" id="agent-fleet-mode-advanced" data-mode="advanced" role="tab" aria-selected="false">Gelişmiş</button>
@@ -2803,7 +2829,7 @@
 
                                 <div id="onboarding-step-2" class="onboarding-step">
                                     <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bu makinede ajan kurulumu mümkün mü?</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Windows: kurabiliyorsanız «Evet». «Hayır» veya ağ cihazı: syslog — çoğu zaman doğrudan merkez <strong>1514</strong>; istenirse ayrı Linux’ta relay token’ı.</p>
+                                    <p class="help-text" style="margin:0.35rem 0;">Ajan kurulabiliyorsa <strong>Evet</strong>; ağ cihazı/syslog için <strong>Hayır</strong> seçin.</p>
                                     <div class="onboarding-scenario-grid">
                                         <button type="button" class="onboarding-scenario-btn" data-can-install="yes">Evet</button>
                                         <button type="button" class="onboarding-scenario-btn" data-can-install="no">Hayır / yalnızca syslog</button>
@@ -2814,8 +2840,8 @@
                                     <strong id="onboarding-step-3-title" class="help-text" style="display:block; margin-bottom:0.35rem;">Merkez adresi</strong>
                                     <p id="onboarding-step-3-lead" class="help-text" style="margin:0.35rem 0;">Yükleniyor…</p>
                                     <div id="onboarding-step-3-syslog-banner" class="help-text" style="margin:0.5rem 0; padding:0.55rem 0.65rem; border-radius:6px; border:1px solid var(--border-color, rgba(255,255,255,0.12)); background:var(--card-subtle-bg, rgba(0,0,0,0.06)); font-size:0.82rem; line-height:1.5;">
-                                        <strong>Syslog / vCenter / firewall:</strong> aynı merkez IP’sine <strong>UDP <span id="onboarding-wizard-syslog-port-udp">1514</span></strong> veya <strong>TCP <span id="onboarding-wizard-syslog-port-tcp">1514</span></strong> (şifresiz; TLS bu girişte yok).<br>
-                                        <span style="opacity:0.95;">Fluent Bit Linux/Windows <em>ajanının</em> merkeze JSON gönderdiği UDP portu ayrıdır (varsayılan <strong><span id="onboarding-step-3-json-hint">5151</span></strong>) — aşağıdaki sayı kutusu syslog içindir değil, ajan içindir.</span>
+                                        <strong>Syslog:</strong> UDP/TCP <span id="onboarding-wizard-syslog-port-udp">1514</span> ·
+                                        <strong>Ajan JSON:</strong> UDP <span id="onboarding-step-3-json-hint">5151</span>
                                     </div>
                                     <p class="help-text" style="margin:0.35rem 0 0.2rem 0; font-weight:600;">Merkez IP veya hostname</p>
                                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
@@ -2830,14 +2856,14 @@
 
                                 <div id="onboarding-step-4" class="onboarding-step">
                                     <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Token (admin)</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Profili uygular ve token üretir. Komutlar aşağıdaki «Kurulum çıktısı» bölümünde.</p>
+                                    <p class="help-text" style="margin:0.35rem 0;">Profili uygula ve token üret.</p>
                                     <p class="settings-summary" id="onboarding-wizard-profile-hint" style="margin:0.35rem 0;">—</p>
                                     <button type="button" class="btn btn-sm btn-primary" id="onboarding-wizard-token-btn"><i class="fas fa-key"></i> Token üret</button>
                                 </div>
 
                                 <div id="onboarding-step-5" class="onboarding-step">
                                     <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bağlantı testi</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Kurulum URL’si değil; yalnızca <strong>ajan UDP (JSON)</strong> portuna test paketi (varsayılan 5151). Syslog 1514 ile bu adımda test edilmez; cihazda hedef IP+1514 ayarını doğrulayın.</p>
+                                    <p class="help-text" style="margin:0.35rem 0;">Ajan UDP (JSON) portuna test paketi gönderir.</p>
                                     <p class="settings-summary" id="onboarding-wizard-probe-label" style="font-family:monospace;font-size:0.8rem;">—</p>
                                     <div style="margin:0.35rem 0; font-size:0.85rem; font-weight:600;">Linux / macOS</div>
                                     <textarea id="onboarding-wizard-linux-cmd" class="input-search" readonly rows="2" style="width:100%;font-family:monospace;font-size:0.8rem;"></textarea>
@@ -2859,7 +2885,7 @@
                         </div>
 
                         <div id="agent-fleet-panel-advanced" class="agent-fleet-panel" style="display: none;">
-                                <p class="help-text" style="margin-top:0;"><code>syslog-relay-v1</code> isteğe bağlı ayrı Linux toplayıcıdır. Doğrudan merkez: syslog <strong>1514</strong> UDP/TCP (TLS bu girişte yok). Graylog saat: <strong>Europe/Istanbul</strong>; GELF olay zamanı Unix epoch.</p>
+                                <p class="help-text" style="margin-top:0;">Gelişmiş mod: profil, token ve kurulum çıktısını manuel yönetir.</p>
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
                                     <select id="agent-profile-select" class="select-input" style="min-width: 280px; flex:1;"></select>
                                     <input id="agent-ingest-host" class="input-search" type="text" placeholder="Ingest host (boş → otomatik)">
@@ -3206,48 +3232,15 @@
                                 <span class="badge badge-warning">Promotion / Rollback</span>
                             </div>
                             <div class="card-body">
-                                <p class="help-text">Mevcut release tag ve promotion komutları. Otomatik rollback: deploy başarısız olursa önceki tag'e dönülür.</p>
-                                <div id="release-status-info" class="health-details" style="margin-bottom:0.75rem;">
-                                    <p class="loading">Yükleniyor...</p>
-                                </div>
-                                <div class="help-text" style="font-size:0.85rem;">
-                                    <strong>Promote:</strong> <code>make promote-staging TAG=v1.0.0</code> veya <code>make promote-prod TAG=v1.0.0</code>
+                                <div id="release-management-container" class="settings-summary">
+                                    Release durumu yükleniyor...
                                 </div>
                             </div>
                         </div>
-                        <div class="card settings-card-block" id="settings-block-data-pipeline" style="margin-top: 1rem; margin-bottom: 1rem; border: 1px solid var(--color-border);">
-                            <div class="card-header">
-                                <h4>📋 Normalizasyon (QC → mapping)</h4>
-                                <span class="badge badge-info">QC → Mapping → Publish</span>
-                            </div>
-                            <div class="card-body">
-                                <p class="help-text">Quality Control stream'den örnek mesaj seçin, vendor/product/os_major doğrulayın, lookup tablosuna ekleyin. Lookup 60 sn içinde yenilenir.</p>
-                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.6rem;">
-                                    <button class="btn btn-sm btn-secondary" id="qc-samples-refresh-btn"><i class="fas fa-rotate"></i> QC Örneklerini Yükle</button>
-                                </div>
-                                <div id="qc-samples-list" class="file-tree" style="margin-bottom:0.75rem; max-height:200px; overflow-y:auto;">
-                                    <p class="loading">QC örnekleri yüklenmedi.</p>
-                                </div>
-                                <div id="normalization-add-form" style="display:none; padding:0.75rem; background:var(--color-light); border-radius:0.5rem; margin-bottom:0.6rem;">
-                                    <strong>Yeni mapping ekle:</strong>
-                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-top:0.5rem;">
-                                        <input id="norm-vendor" class="input-search" type="text" placeholder="vendor" style="max-width:120px;">
-                                        <input id="norm-product" class="input-search" type="text" placeholder="product" style="max-width:120px;">
-                                        <input id="norm-os-major" class="input-search" type="text" placeholder="os_major" value="unknown" style="max-width:80px;">
-                                        <input id="norm-profile" class="input-search" type="text" placeholder="profile (opsiyonel)" style="max-width:140px;">
-                                        <input id="norm-src-field" class="input-search" type="text" placeholder="src field" value="src" style="max-width:100px;">
-                                        <input id="norm-dst-field" class="input-search" type="text" placeholder="dst field" value="dst" style="max-width:100px;">
-                                        <button class="btn btn-sm btn-info" id="norm-dry-run-btn"><i class="fas fa-eye"></i> Önizle</button>
-                                        <button class="btn btn-sm btn-success" id="norm-add-mapping-btn"><i class="fas fa-plus"></i> Ekle</button>
-                                    </div>
-                                    <div id="norm-dry-run-preview" class="settings-summary" style="margin-top:0.5rem; display:none; font-family:monospace; font-size:0.85rem; white-space:pre-wrap; max-height:120px; overflow-y:auto;"></div>
-                                    <div id="norm-add-result" class="settings-summary" style="margin-top:0.5rem;"></div>
-                                </div>
-                                <div id="normalization-lookup-rows" class="file-tree" style="max-height:180px; overflow-y:auto;">
-                                    <p class="loading">Lookup satırları yükleniyor...</p>
-                                </div>
-                            </div>
-                        </div>
+         
+                        <!-- ============================================================
+                             Shortcuts & K8s Ops (Still part of Settings)
+                             ============================================================ -->
                         <div class="card settings-card-block" id="settings-block-shortcuts" style="margin-top: 1rem; margin-bottom: 1rem; border: 1px solid var(--color-border);">
                             <div class="card-header">
                                 <h4>⚙️ Yapılandırma kısayolları</h4>
@@ -3304,6 +3297,173 @@
 
             </div>
 
+            <!-- ============================================================
+                 SMART NORMALIZATION CENTER (Unified Wizard)
+                 ============================================================ -->
+            <div id="normalization" class="tab-content">
+                <div class="card-header" style="background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark)); color: white; padding: 1.5rem; border-radius: 0.75rem 0.75rem 0 0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; width: 100%;">
+                        <div>
+                            <h2 style="font-size: 1.5rem; margin-bottom: 0.25rem;"><i class="fas fa-brain"></i> Akıllı Normalizasyon Merkezi</h2>
+                            <p style="opacity: 0.9; font-size: 0.9rem;">Log Sistemine yeni cihazlar öğretin ve veri kalitesini otomatik artırın.</p>
+                        </div>
+                        <div style="display:flex; gap:0.75rem;">
+                            <button class="btn btn-light" id="nc-samples-refresh-btn" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white;"><i class="fas fa-rotate"></i> Verileri Tazele</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-body" style="padding: 1.5rem; background: var(--bg-surface);">
+                    <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 0.75rem; background: rgba(37, 99, 235, 0.04); border: 1px solid rgba(37, 99, 235, 0.15); display: flex; align-items: flex-start; gap: 1rem;">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--color-primary); color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.25rem;">
+                            <i class="fas fa-wand-magic-sparkles"></i>
+                        </div>
+                        <div style="font-size: 0.92rem; line-height: 1.55;">
+                            <strong style="display:block; margin-bottom: 0.25rem; font-size: 1rem; color: var(--color-primary);">Log Sistemine Yeni Bir Şey Öğretin</strong>
+                            Sistem tarafından tam olarak anlaşılamayan loglar otomatik olarak <strong>"Keşif (QC)"</strong> listesine düşer. Buradan bir log seçerek sisteme o logu nasıl okuyacağını bir kez öğretmeniz yeterlidir. Bundan sonra benzer tüm loglar otomatik olarak normalize edilir.
+                        </div>
+                    </div>
+
+                    <div id="nc-main-layout" style="display: grid; grid-template-columns: 320px 1fr; gap: 1.5rem;">
+                        <!-- Sidebar: Discovery List -->
+                        <div class="nc-sidebar-list">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                                <h5 style="margin:0;"><i class="fas fa-search"></i> 1. Kaynak Seçin</h5>
+                                <span class="badge badge-secondary" id="nc-qc-count">0 Örnek</span>
+                            </div>
+                            <div id="nc-qc-samples-list" class="file-tree" style="max-height: 520px; overflow-y: auto; border-radius: 0.6rem; border: 1px solid var(--color-border); background: var(--bg-main);">
+                                <p class="loading">Örnekler yükleniyor...</p>
+                            </div>
+                        </div>
+
+                        <!-- Main: Wizard Pane -->
+                        <div id="nc-wizard-pane">
+                            <div id="nc-empty-state" style="text-align:center; padding: 5rem 2rem; border: 2px dashed var(--color-border); border-radius: 1rem; background: var(--bg-main);">
+                                <i class="fas fa-hand-pointer" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 1rem; display: block;"></i>
+                                <h5 style="color: var(--text-muted);">Başlamak için sol listeden tanımlanmamış bir log seçin</h5>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); max-width: 400px; margin: 0.5rem auto;">
+                                    Sistem tarafından <code>needs_profile</code> olarak işaretlenen loglar burada listelenir.
+                                </p>
+                            </div>
+
+                            <div id="nc-config-form" style="display:none;">
+                                <!-- Step 2: Identification -->
+                                <div class="nc-wizard-step">
+                                    <div class="nc-step-header">
+                                        <div class="nc-step-number">2</div>
+                                        <h5 style="margin:0;">Cihaz Kimliği (Identification)</h5>
+                                    </div>
+                                    <div class="nc-log-preview" id="nc-selected-log-preview">...</div>
+                                    
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+                                        <div>
+                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Üretici (Vendor)</label>
+                                            <input id="norm-vendor" class="input-search" type="text" placeholder="örn: vmware" style="width:100%;">
+                                        </div>
+                                        <div>
+                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Ürün (Product)</label>
+                                            <input id="norm-product" class="input-search" type="text" placeholder="örn: vcenter" style="width:100%;">
+                                        </div>
+                                        <div>
+                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Versiyon</label>
+                                            <input id="norm-os-major" class="input-search" type="text" placeholder="os_major" value="unknown" style="width:100%;">
+                                        </div>
+                                    </div>
+                                    <div id="norm-discovery-key-view" style="font-family:monospace; font-size:0.75rem; color:var(--text-muted); margin-top:0.75rem; padding: 0.4rem; background: var(--bg-main); border-radius: 4px;">
+                                        Discovery Key: —
+                                    </div>
+                                </div>
+
+                                <!-- Step 3: Parsing Strategy -->
+                                <div class="nc-wizard-step">
+                                    <div class="nc-step-header">
+                                        <div class="nc-step-number">3</div>
+                                        <h5 style="margin:0;">Ayrıştırma Stratejisi (Parsing Strategy)</h5>
+                                    </div>
+
+                                    <!-- Strategy Selector (Dynamic) -->
+                                    <div id="nc-strategy-detector" style="margin-bottom:1rem; padding: 0.6rem; border-radius: 0.5rem; background: var(--bg-main); font-size: 0.9rem; display:flex; align-items:center; gap:0.5rem;">
+                                        <i class="fas fa-search-nodes" style="color: var(--color-primary);"></i>
+                                        <span>Log formatı tespit ediliyor...</span>
+                                    </div>
+
+                                    <div id="nc-parsing-ui-json" style="display:none;">
+                                        <div class="alert alert-info" style="font-size: 0.85rem; padding: 0.6rem; margin-bottom: 1rem;">
+                                            <i class="fas fa-info-circle"></i> Bu log <strong>JSON / KV</strong> formatında tespit edildi. Sadece IP alanlarını eşleştirmeniz yeterlidir.
+                                        </div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                            <div>
+                                                <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Source IP Alanı</label>
+                                                <input id="norm-src-field" class="input-search" type="text" value="src" style="width:100%;">
+                                            </div>
+                                            <div>
+                                                <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Dest IP Alanı</label>
+                                                <input id="norm-dst-field" class="input-search" type="text" value="dst" style="width:100%;">
+                                            </div>
+                                        </div>
+                                        <div id="norm-field-candidates" style="margin-top: 1rem;">
+                                            <div style="font-size:0.78rem; font-weight:600; margin-bottom:0.4rem; color:var(--text-muted);">Önerilen Alanlar:</div>
+                                            <div id="nc-field-tags-container"></div>
+                                        </div>
+                                    </div>
+
+                                    <div id="nc-parsing-ui-text" style="display:none;">
+                                        <div class="alert alert-warning" style="font-size: 0.85rem; padding: 0.6rem; margin-bottom: 1rem; background: rgba(217, 119, 6, 0.08); border-color: rgba(217, 119, 6, 0.3); color: var(--color-warning);">
+                                            <i class="fas fa-font"></i> Bu log <strong>Düz Metin (Plaintext)</strong> olarak tespit edildi. Grok deseni gereklidir.
+                                        </div>
+                                        <div style="margin-bottom: 1rem;">
+                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Grok Deseni (Pattern)</label>
+                                            <textarea id="vp-grok-pattern" class="input-search" rows="3" 
+                                                placeholder="Örn: %{TIME:ts} %{WORD:level} %{GREEDYDATA:msg}"
+                                                style="width:100%; font-family:monospace; font-size:0.85rem; resize:vertical;"></textarea>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                                            <button class="btn btn-sm btn-info" id="vp-grok-test-btn"><i class="fas fa-play"></i> Deseni Test Et</button>
+                                            <span id="vp-test-status" style="font-size:0.8rem;"></span>
+                                        </div>
+                                        <div id="vp-test-result" style="margin-top:0.75rem; padding: 0.6rem; background: var(--bg-main); border-radius: 0.4rem; border: 1px solid var(--color-border); display:none;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Final Actions -->
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 2px solid var(--color-light);">
+                                    <button class="btn btn-secondary" id="nc-cancel-btn">İptal</button>
+                                    <div style="display:flex; gap:0.75rem;">
+                                        <button class="btn btn-info" id="norm-dry-run-btn" disabled><i class="fas fa-eye"></i> Sonuç Önizle</button>
+                                        <button class="btn btn-success" id="nc-save-master-btn" disabled><i class="fas fa-rocket"></i> Sistemi Eğit ve Dağıt</button>
+                                    </div>
+                                </div>
+                                <div id="norm-dry-run-preview" class="log-console" style="margin-top:1rem; display:none; max-height:200px; overflow-y:auto; padding:0.75rem; background:var(--color-dark); color:#fff; border-radius:0.5rem; font-family:monospace; font-size:0.82rem;"></div>
+                                <div id="nc-final-result" style="margin-top:1rem;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Library Section -->
+                    <div style="margin-top: 2.5rem; border-top: 1px solid var(--color-border); padding-top: 1.5rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+                            <h5 style="margin:0;"><i class="fas fa-book-bookmark"></i> Normalizasyon & Grok Kütüphanesi</h5>
+                            <div style="display:flex; gap:0.5rem;">
+                                <button class="btn btn-sm btn-secondary nc-lib-toggle active" data-target="nc-lib-lookups">Eşleştirmeler (CSV)</button>
+                                <button class="btn btn-sm btn-secondary nc-lib-toggle" data-target="nc-lib-packs">Grok Paketleri (JSON)</button>
+                            </div>
+                        </div>
+                        
+                        <div id="nc-lib-lookups" class="nc-library-pane">
+                            <div id="normalization-lookup-rows" class="file-tree" style="max-height:250px; overflow-y:auto; border-radius: 0.5rem; background: var(--bg-main);">
+                                <p class="loading">Yükleniyor...</p>
+                            </div>
+                        </div>
+                        
+                        <div id="nc-lib-packs" class="nc-library-pane" style="display:none;">
+                            <div id="vendor-packs-list" class="file-tree" style="max-height:250px; overflow-y:auto; border-radius: 0.5rem; background: var(--bg-main);">
+                                <p class="loading">Yükleniyor...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Monitoring Tab -->
             <div id="monitoring" class="tab-content">
                 <div class="section-title">
@@ -3341,6 +3501,13 @@
                         <div class="card-body">
                             <p class="help-text">quality_control stream mesaj sayısı</p>
                             <div id="obs-qc-value" style="font-size:1.5rem; font-weight:600;">-</div>
+                            <details style="margin-top:0.5rem;">
+                                <summary class="help-text" style="cursor:pointer;">raw_ingest / quality_control / clean_normalized nasıl okunur?</summary>
+                                <div class="help-text" style="margin-top:0.4rem;">
+                                    quality_control boşsa bu hata olmak zorunda değildir; loglar mevcut profile/mapping ile normalize olup clean_normalized'a gidiyor olabilir.
+                                    Bilinmeyen format için akış: quality_control örneği al → profile_resolver + source/destination CSV mapping ekle → graylog-post-init çalıştır → tekrar test et.
+                                </div>
+                            </details>
                         </div>
                     </div>
                     <div class="card">
@@ -3604,6 +3771,10 @@
                 <div id="confirm-danger-typeto" style="display:none; margin-top:1rem;">
                     <label for="confirm-danger-input" class="help-text">Devam etmek için <strong>ONAYLA</strong> yazın:</label>
                     <input type="text" id="confirm-danger-input" class="input-search" placeholder="ONAYLA" style="margin-top:0.4rem; width:100%;" autocomplete="off">
+                </div>
+                <div id="confirm-danger-password-wrap" style="display:none; margin-top:0.8rem;">
+                    <label for="confirm-danger-password" class="help-text">Kullanıcı şifrenizi girin:</label>
+                    <input type="password" id="confirm-danger-password" class="input-search" placeholder="Şifre" style="margin-top:0.4rem; width:100%;" autocomplete="current-password">
                 </div>
             </div>
             <div class="modal-footer">
