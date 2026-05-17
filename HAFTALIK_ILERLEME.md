@@ -27,7 +27,7 @@
 | 4     | 28.04 - 04.05.2026 | Akıllı normalizasyon: profil/lookup, kanonik alan eşlemesi, `quality_control` ve bilinmeyen formatların yönetimi               | %68                    | ✅ Tamamlandı |
 | 5     | 05.05 - 11.05.2026 | OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı                          | %74                    | ✅ Tamamlandı |
 | 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ✅ Tamamlandı |
-| 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ⬜ Başlamadı  |
+| 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ✅ Tamamlandı |
 | 8     | 26.05 - 01.06.2026 | Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri                            | %91                    | ⬜ Başlamadı  |
 | 9     | 02.06 - 08.06.2026 | Bitirme raporu taslağı; eksik modüllerin tamamlanması; kenar durum ve regresyon kontrolleri                                    | %96                    | ⬜ Başlamadı  |
 | 10    | 09.06 - 15.06.2026 | Bitirme raporu kesinleştirme ve sunum; son hata düzeltmeleri; teslim paketi ve sürüm/etiket notu                               | %100                   | ⬜ Başlamadı  |
@@ -42,6 +42,33 @@
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
 
 ---
+
+### Hafta 7 *(Tarih: 19.05.2026 - 25.05.2026)*
+
+**Plandaki hedef:**
+
+- Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon
+
+**Bu hafta yaptıklarım:**
+
+- İlk kurulum arayüzünü üç adımlı sihirbaz (kimlik, operasyon ön koşulları, yönetici parolası) ve adım göstergesiyle yeniledim.
+- Giriş ve kurulum ekranlarında ortak onboarding düzeni (`onboarding` layout, bileşen CSS) kullandım.
+- Panel kodunu Flask blueprint yapısına ve modüler JS/CSS dosyalarına ayırarak bakım ve stabilizasyonu iyileştirdim.
+- Dashboard ve operasyonel sekmeleri (izleme, ayarlar, arşiv, ajanlar vb.) ayrı JavaScript modüllerine böldüm.
+- `setup_gate` ile kurulum ön koşullarını panel üzerinden yönetilebilir hale getirdim.
+- Test ortamında `log-management-ui` imajını güncelleyip temel kurulum ve giriş akışlarını doğruladım.
+
+**Plana göre durumum:**
+
+- Hafta 7 hedefleri planla uyumlu şekilde tamamlandı.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- Monolitik `app.py` refaktörü sırasında route ve şablon yollarının blueprint yapısına taşınması ek kontrol gerektirdi; şablonları `templates/pages/` altında toplayarak giderildi.
+
+**Gelecek hafta hedefim:**
+
+- İş planı **Hafta 8:** Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri.
 
 ### Hafta 6 *(Tarih: 12.05.2026 - 18.05.2026)*
 
@@ -67,7 +94,6 @@
 **Gelecek hafta hedefim:**
 
 - İş planı **Hafta 7:** Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon.
-
 
 ### Hafta 5 *(Tarih: 05.05.2026 - 11.05.2026)*
 

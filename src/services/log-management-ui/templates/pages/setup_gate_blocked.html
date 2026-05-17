@@ -1,0 +1,18 @@
+{% extends 'layouts/onboarding.html' %}
+{% block title %}Kurulum bekleniyor — Log Sistem{% endblock %}
+{% block body %}
+<div class="lp-onboarding-wrap">
+    <div class="lp-onboarding-card">
+        <div class="lp-onboarding-brand">
+            <div class="icon"><i class="fas fa-hourglass-half"></i></div>
+            <h1>Kurulum tamamlanmadı</h1>
+            {% if reason == 'non_admin' %}
+            <p>Bu aşamada yalnızca <strong>admin</strong> kullanıcısı ilk kurulumu tamamlayabilir. Lütfen sistem yöneticinizle iletişime geçin.</p>
+            {% else %}
+            <p>Panel erişimi kurulum tamamlanana kadar kısıtlıdır.</p>
+            {% endif %}
+        </div>
+        <a class="btn btn-primary-gradient" href="{{ url_for('auth.logout') }}">Çıkış yap</a>
+    </div>
+</div>
+{% endblock %}

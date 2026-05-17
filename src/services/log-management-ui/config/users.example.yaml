@@ -1,0 +1,13 @@
+users:
+  - username: admin
+    password_hash: "pbkdf2:sha256:260000$replace$replace"
+    role: admin
+    enabled: true
+  - username: operator1
+    password_hash: "pbkdf2:sha256:260000$replace$replace"
+    role: operator
+    enabled: true
+  - username: viewer1
+    password_hash: "pbkdf2:sha256:260000$replace$replace"
+    role: viewer
+    enabled: true

@@ -615,6 +615,99 @@
             margin-bottom: 1rem;
         }
 
+        .setup-journey-card {
+            margin-bottom: 1rem;
+            border: 1px solid rgba(37, 99, 235, 0.35);
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.07), transparent);
+            scroll-margin-top: 4rem;
+        }
+
+        .setup-journey-card .card-header h3 {
+            margin: 0;
+            font-size: 1.05rem;
+        }
+
+        .setup-journey-progress-track {
+            height: 8px;
+            border-radius: 999px;
+            background: var(--color-border);
+            overflow: hidden;
+            margin: 0.45rem 0 0.85rem;
+        }
+
+        .setup-journey-progress-fill {
+            height: 100%;
+            background: var(--color-primary);
+            transition: width 0.35s ease;
+            border-radius: 999px;
+        }
+
+        .setup-journey-step-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            gap: 0.45rem;
+        }
+
+        .setup-journey-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+            padding: 0.5rem 0.55rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--color-border);
+            background: var(--bg-surface);
+        }
+
+        .setup-journey-row-meta {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .setup-journey-row-title {
+            font-weight: 600;
+            font-size: 0.88rem;
+            margin-bottom: 0.15rem;
+        }
+
+        .setup-journey-row-hint {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+
+        .setup-journey-status {
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .setup-journey-status.done {
+            color: #15803d;
+        }
+
+        .setup-journey-status.partial {
+            color: #b45309;
+        }
+
+        .setup-journey-status.blocked {
+            color: #b91c1c;
+        }
+
+        .setup-journey-status.unknown {
+            color: #6b7280;
+        }
+
+        #setup-journey-collapsed-bar {
+            margin-bottom: 0.75rem;
+            font-size: 0.88rem;
+        }
+
         .overview-stack {
             display: grid;
             gap: 1rem;
@@ -2454,8 +2547,41 @@
 
             <!-- Overview Tab -->
             <div id="overview" class="tab-content active">
+
+                <div id="setup-journey-role-notice" class="card" style="display: none; margin-bottom: 1rem; border: 1px dashed var(--color-border);">
+                    <div class="card-body" style="padding: 0.75rem 1rem;">
+                        <p class="lp-hint-row" style="margin: 0;"><span id="hint-setup-journey-role"></span></p>
+                    </div>
+                </div>
+
+                <div id="setup-journey-card" class="card setup-journey-card" style="display: none;" role="region" aria-labelledby="setup-journey-heading">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.65rem;">
+                        <div>
+                            <h3 id="setup-journey-heading"><i class="fas fa-route"></i> Kurulum yolculuğu</h3>
+                            <p class="lp-hint-row" style="margin: 0.35rem 0 0 0; font-size: 0.82rem; max-width: 52rem;"><span id="hint-setup-journey-lead"></span></p>
+                        </div>
+                        <div style="display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center;">
+                            <span class="badge badge-info" id="setup-journey-progress-label" aria-live="polite">—</span>
+                            <button type="button" class="btn btn-sm btn-secondary" id="setup-journey-refresh-btn" title="Durumu yenile"><i class="fas fa-rotate"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="setup-journey-dismiss-btn">Kurulumu tamamladım (gizle)</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="setup-journey-progress-track" aria-hidden="true">
+                            <div class="setup-journey-progress-fill" id="setup-journey-progress-fill" style="width: 0%;"></div>
+                        </div>
+                        <ul id="setup-journey-steps" class="setup-journey-step-list" role="list"></ul>
+                    </div>
+                </div>
+
+                <p id="setup-journey-collapsed-bar" style="display: none;">
+                    <button type="button" class="btn btn-sm btn-link" id="setup-journey-restore-btn" style="padding-left: 0;">
+                        <i class="fas fa-route"></i> Kurulum yolculuğu kartını tekrar göster
+                    </button>
+                </p>
+
                 <div class="overview-layout">
-                    <div class="card card-primary">
+                    <div class="card card-primary" id="setup-anchor-health">
                         <div class="card-header">
                             <h3><i class="fas fa-heartbeat"></i> Operasyon Özeti</h3>
                             <span class="badge badge-info">Canlı Durum</span>
@@ -2518,7 +2644,7 @@
                                 </div>
                             </div>
                             <div class="subtitle" id="overview-slo-freshness" style="margin-top:0.45rem;">Henüz alınmadı</div>
-                            <p class="help-text" style="margin-top:0.35rem;font-size:0.78rem;color:var(--muted-text,#6b7280);">Bu satır Fluent Bit metrik trendine dayanır; henüz ingest yokken tire (—) ve bottleneck «Henüz ölçülemedi» beklenen davranıştır.</p>
+                            <p class="lp-hint-row" style="margin-top:0.35rem;font-size:0.78rem;color:var(--muted-text,#6b7280);"><span id="hint-overview-slo"></span></p>
                         </div>
                     </div>
 
@@ -2540,7 +2666,7 @@
                             </div>
                         </div>
 
-                        <div class="card">
+                        <div class="card" id="setup-anchor-ops">
                             <div class="card-header">
                                 <h3><i class="fas fa-sliders-h"></i> Operasyon Merkezi</h3>
                             </div>
@@ -2673,11 +2799,8 @@
                             </button>
                         </div>
 
-                        <p id="services-storage-hint" class="help-text" style="margin:0.35rem 0 0.6rem;font-size:0.86rem;line-height:1.45;">
-                            <strong>Veri (bind):</strong> O satırdaki servisin bind mount dizinlerinin <code>du</code> ile yaklaşık toplamı. Konteyner başına ayrı kota yok; veri genelde host’ta paylaşılan bir bölümde durur.
-                            Disk dolunca / yer açmak için aşağıdaki paylaşılan bölüm özetine bakın veya Ayarlar’daki depolama akışını kullanın.
-                        </p>
-                        <div id="services-storage-shared-summary" class="help-text" style="display:none;margin:0 0 0.65rem;padding:0.5rem 0.65rem;border:1px solid rgba(127,127,127,0.25);border-radius:6px;line-height:1.45;"></div>
+                        <p class="lp-hint-row" style="margin:0.35rem 0 0.6rem;font-size:0.86rem;line-height:1.45;"><span id="hint-services-storage"></span></p>
+                        <div id="services-storage-shared-summary" class="storage-inline-summary" style="display:none;margin:0 0 0.65rem;padding:0.5rem 0.65rem;border:1px solid rgba(127,127,127,0.25);border-radius:6px;line-height:1.45;"></div>
 
                         <div id="services-bulk-summary" class="services-summary">
                             <span>Toplu işlem özeti hazırlanıyor...</span>
@@ -2767,26 +2890,16 @@
                             <button type="button" class="btn btn-sm btn-secondary" id="agent-refresh-btn" title="Graylog sayıları + token listesi"><i class="fas fa-rotate"></i> Yenile</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="agent-fleet-repair-btn" title="nodes.json dosyasını enrollment (aktif token + activatedNode) ile hizalar"><i class="fas fa-database"></i> Disk eşitle</button>
                         </div>
-                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.84rem;">
-                            Boş liste için önce <strong>Yenile</strong>, gerekirse <strong>Disk eşitle</strong>. Satıra tıklayarak detayları yönetebilirsiniz.
-                        </p>
-                        <details class="help-text" style="margin:0 0 0.55rem 0;">
-                            <summary style="cursor:pointer; font-weight:600;">Detaylı açıklama (isteğe bağlı)</summary>
-                            <div style="margin-top:0.35rem; line-height:1.5;">
-                                <div><strong>Güncel:</strong> panel heartbeat durumunu gösterir.</div>
-                                <div><strong>24 saat / 7 gün:</strong> Graylog mesaj sayısıdır.</div>
-                                <div><strong>Syslog-only cihazlar:</strong> envanter tablosuna otomatik eklenmeyebilir; alttaki Graylog özetinden izlenir.</div>
-                            </div>
-                        </details>
+                        <p class="lp-hint-row" style="margin:0 0 0.55rem 0; font-size:0.84rem;"><span id="hint-fleet-inventory"></span></p>
                         <div id="agent-heartbeat-summary" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
                         <div id="agent-node-summary" class="settings-summary" style="margin-bottom:0.55rem;">—</div>
-                        <div id="fleet-hosts-table" class="help-text">Yükleniyor…</div>
+                        <div id="fleet-hosts-table" class="loading">Yükleniyor…</div>
                         <h5 style="margin:1rem 0 0.35rem 0; font-size:0.95rem;">Syslog / kayıtlı ağ görünürlüğü (Graylog)</h5>
-                        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Son 7 günün network log özeti. Satıra tıklayarak servis dağılımı ve örnek kayıtları görebilirsiniz.</p>
-                        <div id="fleet-syslog-sources" class="help-text">—</div>
-                        <div style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border);">
+                        <p class="lp-hint-row" style="margin:0 0 0.45rem 0; font-size:0.82rem;"><span id="hint-fleet-syslog-summary"></span></p>
+                        <div id="fleet-syslog-sources" class="loading">—</div>
+                        <div id="setup-anchor-security" style="margin-top:0.85rem; padding-top:0.75rem; border-top:1px solid var(--color-border); scroll-margin-top: 5rem;">
                             <h5 style="margin:0 0 0.35rem 0; font-size:0.95rem;">Kayıtlı Syslog Kaynakları</h5>
-                            <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Politika: kayıt dışı kaynaklar düşürülür. Yeni kaynak eklemeden log kabul edilmez.</p>
+                            <p class="lp-hint-row" style="margin:0 0 0.45rem 0; font-size:0.82rem;"><span id="hint-fleet-syslog-policy"></span></p>
                             <div id="syslog-ingest-guard-status" class="settings-summary" style="margin:0 0 0.5rem 0; font-size:0.82rem;">—</div>
                             <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.5rem;">
                                 <input id="syslog-trusted-source-input" class="input-search" type="text" placeholder="Örn: 10.10.100.10 veya vcenter.local" style="min-width:240px; flex:1;">
@@ -2794,7 +2907,7 @@
                                 <button type="button" class="btn btn-sm btn-secondary" id="syslog-trusted-sources-refresh-btn"><i class="fas fa-rotate"></i> Yenile</button>
                             </div>
                             <div id="syslog-trusted-sources-list" class="settings-summary" style="margin-bottom:0.5rem;">Yükleniyor…</div>
-                            <div id="syslog-trusted-sources-draft-status" class="help-text" style="margin:0 0 0.5rem 0; font-size:0.8rem;">—</div>
+                            <div id="syslog-trusted-sources-draft-status" class="settings-summary" style="margin:0 0 0.5rem 0; font-size:0.8rem;">—</div>
                             <div style="display:flex; justify-content:flex-end; gap:0.5rem;">
                                 <button type="button" class="btn btn-sm btn-success" id="syslog-trusted-sources-save-btn"><i class="fas fa-save"></i> Kaydet</button>
                             </div>
@@ -2808,7 +2921,7 @@
                         <span class="badge badge-success">Sihirbaz · gelişmiş</span>
                     </div>
                     <div class="card-body">
-                        <p class="help-text" style="margin-top:0;">Sihirbaz adımlarını izleyin: profil seçin, token üretin, kurulum komutunu kopyalayın. (Admin yetkisi gerekir.)</p>
+                        <p class="lp-hint-row" style="margin-top:0;"><span id="hint-onboarding-wizard"></span></p>
                         <div class="agent-fleet-mode-switch" role="tablist" aria-label="Kurulum görünümü">
                             <button type="button" class="btn btn-sm btn-primary agent-fleet-mode-btn active" id="agent-fleet-mode-wizard" data-mode="wizard" role="tab" aria-selected="true">Sihirbaz</button>
                             <button type="button" class="btn btn-sm btn-secondary agent-fleet-mode-btn" id="agent-fleet-mode-advanced" data-mode="advanced" role="tab" aria-selected="false">Gelişmiş</button>
@@ -2817,7 +2930,7 @@
                                 <div class="onboarding-step-indicator" id="onboarding-wizard-indicator">Adım 1 / 5</div>
 
                                 <div id="onboarding-step-1" class="onboarding-step active">
-                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Kaynak türü</strong>
+                                    <strong class="form-step-label">Kaynak türü</strong>
                                     <div class="onboarding-scenario-grid">
                                         <button type="button" class="onboarding-scenario-btn" data-scenario="linux_server" data-summary="Linux — dosya logları">Linux sunucu</button>
                                         <button type="button" class="onboarding-scenario-btn" data-scenario="network_device" data-summary="Syslog cihazı">Ağ cihazı</button>
@@ -2828,8 +2941,8 @@
                                 </div>
 
                                 <div id="onboarding-step-2" class="onboarding-step">
-                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bu makinede ajan kurulumu mümkün mü?</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Ajan kurulabiliyorsa <strong>Evet</strong>; ağ cihazı/syslog için <strong>Hayır</strong> seçin.</p>
+                                    <strong class="form-step-label">Bu makinede ajan kurulumu mümkün mü?</strong>
+                                    <p class="lp-hint-row" style="margin:0.35rem 0;"><span id="hint-onboarding-caninstall"></span></p>
                                     <div class="onboarding-scenario-grid">
                                         <button type="button" class="onboarding-scenario-btn" data-can-install="yes">Evet</button>
                                         <button type="button" class="onboarding-scenario-btn" data-can-install="no">Hayır / yalnızca syslog</button>
@@ -2837,33 +2950,33 @@
                                 </div>
 
                                 <div id="onboarding-step-3" class="onboarding-step">
-                                    <strong id="onboarding-step-3-title" class="help-text" style="display:block; margin-bottom:0.35rem;">Merkez adresi</strong>
-                                    <p id="onboarding-step-3-lead" class="help-text" style="margin:0.35rem 0;">Yükleniyor…</p>
-                                    <div id="onboarding-step-3-syslog-banner" class="help-text" style="margin:0.5rem 0; padding:0.55rem 0.65rem; border-radius:6px; border:1px solid var(--border-color, rgba(255,255,255,0.12)); background:var(--card-subtle-bg, rgba(0,0,0,0.06)); font-size:0.82rem; line-height:1.5;">
+                                    <strong id="onboarding-step-3-title" class="form-step-label">Merkez adresi</strong>
+                                    <p id="onboarding-step-3-lead" class="onboarding-step-lead">Yükleniyor…</p>
+                                    <div id="onboarding-step-3-syslog-banner" class="onboarding-callout">
                                         <strong>Syslog:</strong> UDP/TCP <span id="onboarding-wizard-syslog-port-udp">1514</span> ·
                                         <strong>Ajan JSON:</strong> UDP <span id="onboarding-step-3-json-hint">5151</span>
                                     </div>
-                                    <p class="help-text" style="margin:0.35rem 0 0.2rem 0; font-weight:600;">Merkez IP veya hostname</p>
+                                    <p class="form-label-block" style="margin:0.35rem 0 0.2rem 0;">Merkez IP veya hostname</p>
                                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
                                         <input id="onboarding-wizard-ingest-host" class="input-search" type="text" placeholder="örn. 10.0.0.5" style="min-width:220px;">
                                     </div>
-                                    <p class="help-text" style="margin:0.55rem 0 0.2rem 0;"><label id="onboarding-wizard-ingest-port-label" for="onboarding-wizard-ingest-port" style="font-weight:600; cursor:pointer;">Fluent Bit ajanı → merkez UDP (JSON)</label></p>
+                                    <p class="form-label-block" style="margin:0.55rem 0 0.2rem 0;"><label id="onboarding-wizard-ingest-port-label" for="onboarding-wizard-ingest-port" style="cursor:pointer;">Fluent Bit ajanı → merkez UDP (JSON)</label></p>
                                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
                                         <input id="onboarding-wizard-ingest-port" class="input-search" type="number" min="1" max="65535" value="5151" style="max-width:100px;" aria-describedby="onboarding-step-3-syslog-banner">
                                     </div>
-                                    <div id="onboarding-wizard-ingest-hints" class="help-text" style="margin-top:0.45rem; padding:0.45rem 0.55rem; border-radius:6px; background:var(--card-subtle-bg, rgba(0,0,0,0.04)); font-size:0.78rem; line-height:1.45;">Yükleniyor…</div>
+                                    <div id="onboarding-wizard-ingest-hints" class="onboarding-ingest-hints">Yükleniyor…</div>
                                 </div>
 
                                 <div id="onboarding-step-4" class="onboarding-step">
-                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Token (admin)</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Profili uygula ve token üret.</p>
+                                    <strong class="form-step-label">Token (admin)</strong>
+                                    <p class="lp-hint-row" style="margin:0.35rem 0;"><span id="hint-onboarding-token"></span></p>
                                     <p class="settings-summary" id="onboarding-wizard-profile-hint" style="margin:0.35rem 0;">—</p>
                                     <button type="button" class="btn btn-sm btn-primary" id="onboarding-wizard-token-btn"><i class="fas fa-key"></i> Token üret</button>
                                 </div>
 
                                 <div id="onboarding-step-5" class="onboarding-step">
-                                    <strong class="help-text" style="display:block; margin-bottom:0.35rem;">Bağlantı testi</strong>
-                                    <p class="help-text" style="margin:0.35rem 0;">Ajan UDP (JSON) portuna test paketi gönderir.</p>
+                                    <strong class="form-step-label">Bağlantı testi</strong>
+                                    <p class="lp-hint-row" style="margin:0.35rem 0;"><span id="hint-onboarding-test"></span></p>
                                     <p class="settings-summary" id="onboarding-wizard-probe-label" style="font-family:monospace;font-size:0.8rem;">—</p>
                                     <div style="margin:0.35rem 0; font-size:0.85rem; font-weight:600;">Linux / macOS</div>
                                     <textarea id="onboarding-wizard-linux-cmd" class="input-search" readonly rows="2" style="width:100%;font-family:monospace;font-size:0.8rem;"></textarea>
@@ -2885,7 +2998,7 @@
                         </div>
 
                         <div id="agent-fleet-panel-advanced" class="agent-fleet-panel" style="display: none;">
-                                <p class="help-text" style="margin-top:0;">Gelişmiş mod: profil, token ve kurulum çıktısını manuel yönetir.</p>
+                                <p class="lp-hint-row" style="margin-top:0;"><span id="hint-onboarding-advanced"></span></p>
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
                                     <select id="agent-profile-select" class="select-input" style="min-width: 280px; flex:1;"></select>
                                     <input id="agent-ingest-host" class="input-search" type="text" placeholder="Ingest host (boş → otomatik)">
@@ -2910,12 +3023,12 @@
                         <div class="agent-fleet-shared-block">
                                 <h5>Kurulum çıktısı</h5>
                                 <div id="agent-install-result" class="settings-summary" style="margin-bottom:0.45rem;">—</div>
-                                <p id="agent-install-kind-hint" class="help-text" style="margin:0 0 0.45rem 0; font-size:0.82rem;">Token sonrası tek kurulum bağlantısı burada.</p>
-                                <label class="help-text" for="agent-install-url" style="display:block; margin-bottom:0.2rem; font-weight:600;">Kurulum URL</label>
+                                <p class="lp-hint-row" style="margin:0 0 0.45rem 0; font-size:0.82rem; align-items:flex-start; flex-wrap:wrap;"><span id="hint-agent-install"></span><span id="agent-install-kind-hint" class="lp-help-muted" style="flex:1; min-width:12rem;"></span></p>
+                                <label class="form-label-block" for="agent-install-url">Kurulum URL</label>
                                 <input id="agent-install-url" class="input-search" type="text" readonly placeholder="…/install/TOKEN.sh veya .ps1" style="margin-bottom:0.55rem;">
                                 <div id="agent-install-row-bash" style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-start; margin-bottom:0.45rem;">
                                     <div style="flex:1; min-width:280px;">
-                                        <label class="help-text" for="agent-install-command" style="display:block; margin-bottom:0.2rem; font-weight:600;">Linux / relay</label>
+                                        <label class="form-label-block" for="agent-install-command">Linux / relay</label>
                                         <input id="agent-install-command" class="input-search" type="text" readonly placeholder="curl … | sudo bash" style="width:100%;">
                                     </div>
                                     <div style="align-self:flex-end;">
@@ -2924,7 +3037,7 @@
                                 </div>
                                 <div id="agent-install-row-win" style="display:none; gap:0.5rem; flex-wrap:wrap; align-items:flex-start; margin-bottom:0.45rem;">
                                     <div style="flex:1; min-width:280px;">
-                                        <label class="help-text" for="agent-install-command-win" style="display:block; margin-bottom:0.2rem; font-weight:600;">Windows (Yönetici PS)</label>
+                                        <label class="form-label-block" for="agent-install-command-win">Windows (Yönetici PS)</label>
                                         <textarea id="agent-install-command-win" class="input-search" readonly rows="4" placeholder="İndir ve çalıştır" style="width:100%; font-family:monospace; font-size:0.8rem;"></textarea>
                                     </div>
                                     <div style="align-self:flex-end;">
@@ -2933,9 +3046,9 @@
                                 </div>
                                 <div id="agent-uninstall-row-win" style="display:none; gap:0.5rem; flex-wrap:wrap; align-items:flex-start; margin-bottom:0.45rem;">
                                     <div style="flex:1; min-width:280px;">
-                                        <label class="help-text" for="agent-uninstall-url" style="display:block; margin-bottom:0.2rem; font-weight:600;">Windows kaldırma URL</label>
+                                        <label class="form-label-block" for="agent-uninstall-url">Windows kaldırma URL</label>
                                         <input id="agent-uninstall-url" class="input-search" type="text" readonly placeholder="…/uninstall/TOKEN.ps1" style="width:100%; margin-bottom:0.35rem;">
-                                        <label class="help-text" for="agent-uninstall-command-win" style="display:block; margin-bottom:0.2rem; font-weight:600;">Kaldırma (tek komut bloğu — audit’e düşer)</label>
+                                        <label class="form-label-block" for="agent-uninstall-command-win">Kaldırma (tek komut bloğu — audit’e düşer)</label>
                                         <textarea id="agent-uninstall-command-win" class="input-search" readonly rows="4" placeholder="Önce Windows token üretin" style="width:100%; font-family:monospace; font-size:0.8rem;"></textarea>
                                     </div>
                                     <div style="align-self:flex-end;">
@@ -2993,9 +3106,7 @@
                                 <div class="settings-kpi-value" id="settings-critical-count">0</div>
                             </div>
                         </div>
-                        <p class="help-text">
-                            Bu bölümde kritik ayarları dosya düzenlemeden yönetebilirsiniz. Her ayar için ne işe yaradığı açıklanır, rolünüze göre yetkili olduğunuz alanları düzenlersiniz.
-                        </p>
+                        <p class="lp-hint-row"><span id="hint-settings-summary"></span></p>
                         <div id="settings-runtime-status" class="settings-runtime-banner">
                             <div class="settings-runtime-main">
                                 <div class="settings-runtime-title">Ayar Uygulama Modu</div>
@@ -3011,8 +3122,9 @@
                                 </div>
                                 <span id="settings-post-check-badge" class="status-badge status-unknown">Bekleniyor</span>
                             </div>
+                            <p class="lp-hint-row" style="margin:0 0 0.5rem 0;"><span id="hint-settings-postcheck"></span></p>
                             <ul id="settings-post-check-list" class="settings-post-check-list">
-                                <li>Health, ingest ve query smoke kontrolleri burada gösterilir.</li>
+                                <li>Özet aşağıda listelenir.</li>
                             </ul>
                             <div class="settings-post-check-actions">
                                 <button class="btn btn-secondary btn-sm" id="settings-post-check-run-btn"><i class="fas fa-stethoscope"></i> Kontrolü Çalıştır</button>
@@ -3027,13 +3139,8 @@
                         <span class="badge badge-secondary">Arama · kategori · kaydet</span>
                     </div>
                     <div class="card-body">
-                        <p class="help-text" style="margin-top:0;">Rolünüze göre düzenleyebileceğiniz anahtarlar. Kayıt sonrası otomatik post-check tetiklenebilir; üstteki «Kontrolü Çalıştır» ile isteğe bağlı doğrulama yapın.</p>
+                        <p class="lp-hint-row" style="margin-top:0;"><span id="hint-settings-catalog"></span></p>
                         <div class="settings-toolbar">
-                            <div class="settings-quick-guide">
-                                <span><strong>1.</strong> Ayarı seç ve değerini güncelle</span>
-                                <span><strong>2.</strong> Detaydan etki alanını kontrol et</span>
-                                <span><strong>3.</strong> Kaydet; gerekirse üstteki kontrolü çalıştırın</span>
-                            </div>
                             <input type="text" id="settings-search" class="input-search" placeholder="Ayar ara... (ör: signer, smtp, timezone)">
                             <div class="settings-actions">
                                 <button class="btn btn-secondary btn-sm" id="settings-collapse-all-btn"><i class="fas fa-compress"></i> Tümünü Kapat</button>
@@ -3056,7 +3163,7 @@
                                 <span class="badge badge-info">Compose uyumlu</span>
                             </div>
                             <div class="card-body">
-                                <p class="help-text">Öneriler, <code>docker-compose.yml</code> içindeki Graylog/OpenSearch giriş noktası ile <strong>aynı formülü</strong> kullanır (%20 rezerv; kalan RAM’de Graylog heap %25, OpenSearch %50, min 512 MB). <strong>Uygula</strong> <code>GRAYLOG_JAVA_HEAP_MB</code> ve <code>OPENSEARCH_JAVA_HEAP_MB</code> yazar; ardından hostta <code>docker compose</code> ile <code>graylog</code> ve <code>opensearch1</code> otomatik yeniden oluşturulur (Docker soketi gerekir). Kapatmak için ortam: <code>LOG_SYSTEM_HEAP_COMPOSE_RECREATE=0</code>. <code>docker-compose.prod.yml</code> gibi farklı profiller sabit <code>JAVA_OPTS</code> kullanabilir.</p>
+                                <p class="lp-hint-row"><span id="hint-settings-perf-body"></span></p>
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
                                     <input id="perf-ram-input" class="input-search" type="number" min="512" max="524288" placeholder="RAM (MB)" style="max-width:140px;">
                                     <button class="btn btn-sm btn-secondary" id="perf-detect-ram-btn"><i class="fas fa-memory"></i> RAM Tespit Et</button>
@@ -3120,10 +3227,10 @@
                                     <button class="btn btn-sm btn-primary" id="storage-apply-btn"><i class="fas fa-check"></i> Kaydet</button>
                                 </div>
                                 <div style="margin-bottom:0.55rem;">
-                                    <label class="help-text" style="display:block; margin-bottom:0.3rem;">Onay: yukarıdaki yolu aynen yazın</label>
+                                    <label class="form-label-block" for="storage-apply-confirm-path">Onay: yukarıdaki yolu aynen yazın</label>
                                     <input id="storage-apply-confirm-path" class="input-search" type="text" placeholder="/opt/log-system/data" style="min-width:280px; max-width:100%; flex:1;" spellcheck="false" autocomplete="off">
                                 </div>
-                                <div id="storage-ack-root-row" class="help-text" style="display:none; margin-bottom:0.55rem; padding:0.45rem 0.55rem; border-radius:0.4rem; border:1px solid var(--color-border); background:rgba(245,158,11,0.08); font-size:0.84rem; line-height:1.4;">
+                                <div id="storage-ack-root-row" class="storage-ack-banner" style="display:none;">
                                     <label style="margin:0; cursor:pointer; display:flex; align-items:flex-start; gap:0.45rem;">
                                         <input type="checkbox" id="storage-ack-same-as-root-cb" style="margin-top:0.2rem;">
                                         <span><strong>Tek disk kabulü:</strong> Logları sistem diskinde tutmayı bilerek seçiyorum.</span>
@@ -3131,7 +3238,7 @@
                                 </div>
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-bottom:0.6rem;">
                                     <input id="storage-custom-path" class="input-search" type="text" placeholder="Listede yoksa: /mnt/logdata" style="min-width:280px; flex:1;" spellcheck="false">
-                                    <span class="help-text" style="margin:0;">Özel yol doluysa liste yerine o kullanılır.</span>
+                                    <p class="lp-hint-row" style="margin:0; align-items:flex-start;"><span id="hint-storage-custom-path"></span></p>
                                 </div>
                                 <div id="storage-scan-summary" class="settings-summary">Adaylar henüz yüklenmedi.</div>
                                 <div id="storage-apply-result" class="settings-summary" style="margin-top:0.45rem;">Henüz kayıt yok.</div>
@@ -3153,7 +3260,7 @@
                                     <h6>Önerilen (★ disk)</h6>
                                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
                                         <button type="button" class="btn btn-sm btn-secondary" id="storage-recommended-plan-btn"><i class="fas fa-route"></i> Planı yükle</button>
-                                        <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.85rem;">
+                                        <label class="lp-help-muted" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.85rem;">
                                             <input type="checkbox" id="storage-recommended-rescan-cb"> Önce veriyolu tara
                                         </label>
                                     </div>
@@ -3164,9 +3271,9 @@
                                             <button type="button" class="btn btn-sm btn-danger" id="storage-complete-recommended-btn"><i class="fas fa-bolt"></i> Tam kur</button>
                                         </div>
                                         <div style="display:flex; flex-wrap:wrap; gap:0.55rem; align-items:center; font-size:0.85rem;">
-                                            <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-wipe"> Wipe (bölüm sil)</label>
-                                            <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-relocate"> Dolu <code>data</code> → yedek</label>
-                                            <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-rescan-first" checked> Kurulum öncesi tara</label>
+                                            <label class="lp-help-muted" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-wipe"> Wipe (bölüm sil)</label>
+                                            <label class="lp-help-muted" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-relocate"> Dolu <code>data</code> → yedek</label>
+                                            <label class="lp-help-muted" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-recommended-rescan-first" checked> Kurulum öncesi tara</label>
                                         </div>
                                     </div>
                                     <div id="storage-recommended-result" class="settings-summary" style="margin-top:0.4rem; font-size:0.88rem;"></div>
@@ -3180,10 +3287,13 @@
                                             <option value="">Ham disk…</option>
                                         </select>
                                     </div>
-                                    <div id="storage-raw-disk-hint" class="help-text" style="margin-bottom:0.45rem; font-size:0.84rem;">Önce üstteki «Disk listesini yenile» ile liste dolsun.</div>
+                                    <div style="margin-bottom:0.45rem;">
+                                        <p class="lp-hint-row" style="margin:0 0 0.25rem 0; font-size:0.84rem;"><span id="hint-storage-raw-hint"></span></p>
+                                        <div id="storage-raw-disk-hint" class="lp-help-muted" style="font-size:0.84rem;"></div>
+                                    </div>
                                     <div style="display:flex; flex-wrap:wrap; gap:0.55rem; align-items:center; margin-bottom:0.45rem; font-size:0.85rem;">
-                                        <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-wipe-disk"> Wipe</label>
-                                        <label class="help-text" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;" title="data → data.panel-relocate-…"><input type="checkbox" id="storage-relocate-mount-dir"> Dolu mount → yedek</label>
+                                        <label class="lp-help-muted" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;"><input type="checkbox" id="storage-wipe-disk"> Wipe</label>
+                                        <label class="lp-help-muted" style="margin:0; display:flex; align-items:center; gap:0.35rem; cursor:pointer;" title="data → data.panel-relocate-…"><input type="checkbox" id="storage-relocate-mount-dir"> Dolu mount → yedek</label>
                                     </div>
                                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
                                         <input id="storage-confirm-device" class="input-search" type="text" placeholder="Onay: /dev/sdb" style="min-width:220px; flex:1;" spellcheck="false" autocomplete="off">
@@ -3203,7 +3313,7 @@
                                     </div>
                                     <div id="storage-grow-summary" class="settings-summary" style="margin-top:0.45rem; font-size:0.88rem;">—</div>
                                     <div id="storage-grow-confirm-row" style="display:none; margin-top:0.5rem;">
-                                        <label class="help-text" style="display:block; margin-bottom:0.35rem;">İşlemden önce bölüm yolunu <strong>aynen</strong> yazın: <code id="storage-grow-expected-hint">—</code></label>
+                                        <label class="form-label-block" for="storage-grow-confirm-part">İşlemden önce bölüm yolunu <strong>aynen</strong> yazın: <code id="storage-grow-expected-hint">—</code></label>
                                         <input id="storage-grow-confirm-part" class="input-search" type="text" placeholder="/dev/sdb1" style="max-width:340px; width:100%;" spellcheck="false" autocomplete="off">
                                     </div>
                                     <div id="storage-grow-result" class="settings-summary" style="margin-top:0.35rem; font-size:0.88rem;"></div>
@@ -3217,7 +3327,7 @@
                                     </div>
                                     <div id="storage-os-grow-summary" class="settings-summary" style="margin-top:0.45rem; font-size:0.88rem;">—</div>
                                     <div id="storage-os-grow-confirm-row" style="display:none; margin-top:0.5rem;">
-                                        <label class="help-text" style="display:block; margin-bottom:0.35rem;">Onay: kök aygıt yolunu (düz kurulumda bölüm, LVM’de kök LV) <strong>aynen</strong> yazın: <code id="storage-os-grow-expected-hint">—</code></label>
+                                        <label class="form-label-block" for="storage-os-grow-confirm-part">Onay: kök aygıt yolunu (düz kurulumda bölüm, LVM’de kök LV) <strong>aynen</strong> yazın: <code id="storage-os-grow-expected-hint">—</code></label>
                                         <input id="storage-os-grow-confirm-part" class="input-search" type="text" placeholder="/dev/sda1 veya /dev/mapper/…" style="max-width:340px; width:100%;" spellcheck="false" autocomplete="off">
                                     </div>
                                     <div id="storage-os-grow-result" class="settings-summary" style="margin-top:0.35rem; font-size:0.88rem;"></div>
@@ -3247,7 +3357,7 @@
                                 <span class="badge badge-info">Yapılandırma editörü</span>
                             </div>
                             <div class="card-body">
-                                <p class="help-text">Sık kullanılan dosyaları <strong>Yapılandırma</strong> sekmesinde açar; düzenleme rolünüze bağlıdır.</p>
+                                <p class="lp-hint-row" style="margin:0 0 0.75rem 0;"><span id="hint-storage-shortcuts"></span></p>
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem;">
                                     <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('grafana_config/dashboards/master_dashboard.json')"><i class="fas fa-chart-line"></i> SOC Dashboard JSON</button>
                                     <button class="btn btn-sm btn-secondary" onclick="openConfigFromSettings('grafana_config/alerting/rules.yaml')"><i class="fas fa-bell"></i> Grafana Alert Kuralları</button>
@@ -3267,7 +3377,7 @@
                             <span class="badge badge-success">Auto Scale</span>
                         </div>
                         <div class="card-body">
-                            <p class="help-text">Servislerin min/max replica ve CPU/Memory hedeflerini no-code olarak yönetin.</p>
+                            <p class="lp-hint-row" style="margin:0 0 0.75rem 0;"><span id="hint-k8s-rollout"></span></p>
                             <div id="hpa-policies-list" class="file-tree">
                                 <p class="loading">HPA politikaları yükleniyor...</p>
                             </div>
@@ -3280,7 +3390,7 @@
                             <span class="badge badge-warning">Deployment</span>
                         </div>
                         <div class="card-body">
-                            <p class="help-text">Deployment yeniden başlatma ve revision bazlı geri dönüş işlemleri.</p>
+                            <p class="lp-hint-row" style="margin:0 0 0.75rem 0;"><span id="hint-k8s-rollback"></span></p>
                             <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
                                 <select id="rollout-deployment-select" class="select-input" style="flex:1;"></select>
                                 <button class="btn btn-info btn-sm" onclick="loadRolloutHistory()"><i class="fas fa-rotate"></i> Geçmiş</button>
@@ -3314,7 +3424,7 @@
                 </div>
 
                 <div class="card-body" style="padding: 1.5rem; background: var(--bg-surface);">
-                    <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 0.75rem; background: rgba(37, 99, 235, 0.04); border: 1px solid rgba(37, 99, 235, 0.15); display: flex; align-items: flex-start; gap: 1rem;">
+                    <div id="setup-anchor-normalization" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 0.75rem; background: rgba(37, 99, 235, 0.04); border: 1px solid rgba(37, 99, 235, 0.15); display: flex; align-items: flex-start; gap: 1rem; scroll-margin-top: 5rem;">
                         <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--color-primary); color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.25rem;">
                             <i class="fas fa-wand-magic-sparkles"></i>
                         </div>
@@ -3357,15 +3467,15 @@
                                     
                                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
                                         <div>
-                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Üretici (Vendor)</label>
+                                            <label class="form-label-block" for="norm-vendor">Üretici (Vendor)</label>
                                             <input id="norm-vendor" class="input-search" type="text" placeholder="örn: vmware" style="width:100%;">
                                         </div>
                                         <div>
-                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Ürün (Product)</label>
+                                            <label class="form-label-block" for="norm-product">Ürün (Product)</label>
                                             <input id="norm-product" class="input-search" type="text" placeholder="örn: vcenter" style="width:100%;">
                                         </div>
                                         <div>
-                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Versiyon</label>
+                                            <label class="form-label-block" for="norm-os-major">Versiyon</label>
                                             <input id="norm-os-major" class="input-search" type="text" placeholder="os_major" value="unknown" style="width:100%;">
                                         </div>
                                     </div>
@@ -3393,11 +3503,11 @@
                                         </div>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                                             <div>
-                                                <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Source IP Alanı</label>
+                                                <label class="form-label-block" for="norm-src-field">Source IP Alanı</label>
                                                 <input id="norm-src-field" class="input-search" type="text" value="src" style="width:100%;">
                                             </div>
                                             <div>
-                                                <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Dest IP Alanı</label>
+                                                <label class="form-label-block" for="norm-dst-field">Dest IP Alanı</label>
                                                 <input id="norm-dst-field" class="input-search" type="text" value="dst" style="width:100%;">
                                             </div>
                                         </div>
@@ -3412,7 +3522,7 @@
                                             <i class="fas fa-font"></i> Bu log <strong>Düz Metin (Plaintext)</strong> olarak tespit edildi. Grok deseni gereklidir.
                                         </div>
                                         <div style="margin-bottom: 1rem;">
-                                            <label class="help-text" style="display:block; margin-bottom:0.3rem; font-weight:600;">Grok Deseni (Pattern)</label>
+                                            <label class="form-label-block" for="vp-grok-pattern">Grok Deseni (Pattern)</label>
                                             <textarea id="vp-grok-pattern" class="input-search" rows="3" 
                                                 placeholder="Örn: %{TIME:ts} %{WORD:level} %{GREEDYDATA:msg}"
                                                 style="width:100%; font-family:monospace; font-size:0.85rem; resize:vertical;"></textarea>
@@ -3478,9 +3588,9 @@
                             <span class="badge badge-info" id="obs-ingest-badge">-</span>
                         </div>
                         <div class="card-body">
-                            <p class="help-text">Fluent Bit: tüm UDP girişleri toplam kayıt (Prometheus). Graylog ile bire bir değildir.</p>
+                            <p class="lp-hint-row" style="margin:0 0 0.35rem 0;"><span id="hint-obs-ingest"></span></p>
                             <div id="obs-ingest-value" style="font-size:1.5rem; font-weight:600;">-</div>
-                            <p id="obs-ingest-note" class="help-text" style="display:none;margin-top:0.35rem;font-size:0.78rem;"></p>
+                            <p id="obs-ingest-note" class="obs-ingest-note"></p>
                         </div>
                     </div>
                     <div class="card">
@@ -3489,7 +3599,7 @@
                             <span class="badge badge-warning" id="obs-disk-badge">-</span>
                         </div>
                         <div class="card-body">
-                            <p class="help-text">Data dizini kullanım oranı</p>
+                            <p class="lp-hint-row" style="margin:0 0 0.35rem 0;"><span id="hint-obs-disk"></span></p>
                             <div id="obs-disk-value" style="font-size:1.5rem; font-weight:600;">-</div>
                         </div>
                     </div>
@@ -3499,15 +3609,9 @@
                             <span class="badge badge-info" id="obs-qc-badge">-</span>
                         </div>
                         <div class="card-body">
-                            <p class="help-text">quality_control stream mesaj sayısı</p>
+                            <p class="lp-hint-row" style="margin:0 0 0.35rem 0;"><span id="hint-obs-qc"></span></p>
                             <div id="obs-qc-value" style="font-size:1.5rem; font-weight:600;">-</div>
-                            <details style="margin-top:0.5rem;">
-                                <summary class="help-text" style="cursor:pointer;">raw_ingest / quality_control / clean_normalized nasıl okunur?</summary>
-                                <div class="help-text" style="margin-top:0.4rem;">
-                                    quality_control boşsa bu hata olmak zorunda değildir; loglar mevcut profile/mapping ile normalize olup clean_normalized'a gidiyor olabilir.
-                                    Bilinmeyen format için akış: quality_control örneği al → profile_resolver + source/destination CSV mapping ekle → graylog-post-init çalıştır → tekrar test et.
-                                </div>
-                            </details>
+                            <p class="lp-hint-row" style="margin:0 0 0.5rem 0; font-size:0.84rem;"><span id="hint-obs-streams-block"></span></p>
                         </div>
                     </div>
                     <div class="card">
@@ -3516,7 +3620,7 @@
                             <span class="badge badge-danger" id="obs-errors-badge">-</span>
                         </div>
                         <div class="card-body">
-                            <p class="help-text">Fluent Bit output hata sayısı</p>
+                            <p class="lp-hint-row" style="margin:0 0 0.35rem 0;"><span id="hint-obs-output-err"></span></p>
                             <div id="obs-errors-value" style="font-size:1.5rem; font-weight:600;">-</div>
                         </div>
                     </div>
@@ -3528,7 +3632,7 @@
                             <h4>💾 Kaynak Kullanımı</h4>
                         </div>
                         <div class="card-body">
-                            <p class="help-text" style="margin-bottom:0.75rem;">İlk iki çubuk <strong>gerçek CPU/RAM ölçümü değildir</strong>; Docker çekirdek servislerinin çalışma ve sağlık özetidir. Depolama, panelin gördüğü kök disk doluluğudur (genelde VM ana diski).</p>
+                            <p class="lp-hint-row" style="margin-bottom:0.75rem;"><span id="hint-obs-resource-bars"></span></p>
                             <div style="margin-bottom: 1rem;">
                                 <label>Çalışan servis payı</label>
                                 <div class="progress">
@@ -3681,9 +3785,7 @@
                             <div id="archive-retention-info">
                                 <p class="loading">Retention bilgisi yükleniyor...</p>
                             </div>
-                            <div class="help-text" style="margin-top:0.75rem;">
-                                OpenSearch ISM: graylog-90gun. Hot 7d → Warm 83d → Delete (90 gün). Grafana/Graylog tam aranabilir. WORM arşiv 2 yıl (5651).
-                            </div>
+                            <p class="lp-hint-row" style="margin-top:0.75rem; flex-wrap:wrap; gap:0.5rem;"><span id="hint-nc-wizard"></span><span id="hint-nc-wizard-extra"></span></p>
                         </div>
                     </div>
                 </div>
@@ -3748,7 +3850,7 @@
                 <button class="modal-close" onclick="closeChangeSummaryModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="help-text" style="margin-bottom:0.75rem;">Kaydetmeden önce etki alanını kontrol edin.</p>
+                <p class="lp-hint-row" style="margin-bottom:0.75rem;"><span id="hint-change-summary"></span></p>
                 <div id="change-summary-body"></div>
             </div>
             <div class="modal-footer">
@@ -3767,13 +3869,13 @@
             </div>
             <div class="modal-body">
                 <p id="confirm-danger-message" class="alert alert-warning" style="margin-bottom:0.75rem;"></p>
-                <p id="confirm-danger-detail" class="help-text" style="margin:0; font-size:0.85rem;"></p>
+                <p id="confirm-danger-detail" class="modal-detail-text"></p>
                 <div id="confirm-danger-typeto" style="display:none; margin-top:1rem;">
-                    <label for="confirm-danger-input" class="help-text">Devam etmek için <strong>ONAYLA</strong> yazın:</label>
+                    <label for="confirm-danger-input" class="form-label-block">Devam etmek için <strong>ONAYLA</strong> yazın:</label>
                     <input type="text" id="confirm-danger-input" class="input-search" placeholder="ONAYLA" style="margin-top:0.4rem; width:100%;" autocomplete="off">
                 </div>
                 <div id="confirm-danger-password-wrap" style="display:none; margin-top:0.8rem;">
-                    <label for="confirm-danger-password" class="help-text">Kullanıcı şifrenizi girin:</label>
+                    <label for="confirm-danger-password" class="form-label-block">Kullanıcı şifrenizi girin:</label>
                     <input type="password" id="confirm-danger-password" class="input-search" placeholder="Şifre" style="margin-top:0.4rem; width:100%;" autocomplete="current-password">
                 </div>
             </div>

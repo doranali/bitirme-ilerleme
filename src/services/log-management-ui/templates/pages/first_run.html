@@ -1,0 +1,92 @@
+{% extends 'layouts/onboarding.html' %}
+{% block title %}İlk kurulum — Log Yönetim Paneli{% endblock %}
+{% block body %}
+<div class="lp-onboarding-wrap">
+    <div class="lp-onboarding-card lp-onboarding-card-wide lp-fr-wizard">
+        <header class="lp-fr-header">
+            <div class="lp-onboarding-brand lp-fr-brand-compact">
+                <div class="icon"><i class="fas fa-building-shield"></i></div>
+                <div>
+                    <h1>İlk kurulum</h1>
+                    <p>Platformu kullanmadan önce birkaç zorunlu ayarı tamamlayın.</p>
+                </div>
+            </div>
+            <nav class="lp-fr-stepper" aria-label="Kurulum adımları">
+                <button type="button" class="lp-fr-step-item is-active" data-goto-step="1" aria-current="step">
+                    <span class="lp-fr-step-num">1</span>
+                    <span class="lp-fr-step-text">Kimlik ve erişim</span>
+                </button>
+                <span class="lp-fr-step-connector" aria-hidden="true"></span>
+                <button type="button" class="lp-fr-step-item" data-goto-step="2">
+                    <span class="lp-fr-step-num">2</span>
+                    <span class="lp-fr-step-text">Operasyon</span>
+                </button>
+                <span class="lp-fr-step-connector" aria-hidden="true"></span>
+                <button type="button" class="lp-fr-step-item" data-goto-step="3">
+                    <span class="lp-fr-step-num">3</span>
+                    <span class="lp-fr-step-text">Güvenlik</span>
+                </button>
+            </nav>
+        </header>
+
+        <div id="gate-alert" class="lp-fr-alert d-none" role="alert"></div>
+
+        <div class="lp-fr-step-panels">
+            <section class="lp-fr-step-panel is-active" data-step="1" aria-labelledby="fr-step-title-1">
+                <h2 id="fr-step-title-1" class="lp-fr-panel-title">Kimlik ve erişim</h2>
+                <p class="lp-fr-panel-desc">Kurum kodunuz ve panelin dışarıdan erişilecek adresi. Değişiklikler ortam dosyasına kaydedilir.</p>
+                <div id="k1-forms" class="lp-fr-form-grid"></div>
+            </section>
+
+            <section class="lp-fr-step-panel" data-step="2" aria-labelledby="fr-step-title-2" hidden>
+                <h2 id="fr-step-title-2" class="lp-fr-panel-title">Operasyonel ön koşullar</h2>
+                <p class="lp-fr-panel-desc">Log hattı, depolama ve imzalama ayarlarının üretime hazır olduğunu doğrulayın.</p>
+                <details class="lp-fr-signing-info">
+                    <summary>İmzalama motoru hakkında</summary>
+                    <p><strong>OpenSSL (açık kaynak):</strong> Kurulum ve zincir testi için uygundur.</p>
+                    <p><strong>TÜBİTAK KamuSM:</strong> Resmi TSA; önce Zamane test kullanıcısı (bilgi@kamusm.gov.tr). Test damgası hukuki delil değildir.</p>
+                    <p>TÜBİTAK seçince TSA URL, müşteri bilgileri ve gerekirse TLS atlama alanlarını doldurun.</p>
+                </details>
+                <div id="k2-tasks" class="lp-fr-task-list"></div>
+            </section>
+
+            <section class="lp-fr-step-panel" data-step="3" aria-labelledby="fr-step-title-3" hidden>
+                <h2 id="fr-step-title-3" class="lp-fr-panel-title">Yönetici parolası</h2>
+                <p class="lp-fr-panel-desc">Varsayılan admin parolasını güçlü bir parolayla değiştirin. Kayıttan sonra oturumu kapatıp yeniden giriş yapmanız önerilir.</p>
+                <div class="lp-fr-field lp-fr-field-password">
+                    <label for="adm-pass">Yeni parola</label>
+                    <input type="password" id="adm-pass" autocomplete="new-password" placeholder="En az 8 karakter">
+                    <div class="lp-fr-password-meter" aria-hidden="true"><span id="adm-meter-bar"></span></div>
+                    <p id="adm-strength" class="lp-fr-field-hint"></p>
+                    <p id="adm-msg" class="lp-fr-field-msg"></p>
+                </div>
+            </section>
+
+            <section class="lp-fr-step-panel" data-step="done" hidden>
+                <div class="lp-fr-done">
+                    <i class="fas fa-circle-check"></i>
+                    <h2>Kurulum tamamlandı</h2>
+                    <p>Tüm zorunlu adımlar bitti. Yönetim paneline geçebilirsiniz.</p>
+                </div>
+            </section>
+        </div>
+
+        <footer class="lp-fr-footer">
+            <button type="button" class="lp-fr-btn-secondary" id="btn-back" hidden>Geri</button>
+            <p id="fr-summary" class="lp-fr-summary">Durum kontrol ediliyor…</p>
+            <button type="button" class="lp-fr-btn-primary" id="btn-primary">Kaydet ve devam et</button>
+            <a class="lp-fr-btn-primary d-none" id="btn-continue" href="/">Panele geç</a>
+        </footer>
+
+        <details class="lp-fr-advanced">
+            <summary>Gelişmiş — acil durum</summary>
+            <p class="lp-fr-advanced-body"><span id="hint-mount-gate"></span></p>
+        </details>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>window.__FIRST_RUN__ = { csrfToken: {{ csrf_token|tojson }} };</script>
+<script src="{{ url_for('static', filename='js/core/hints.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pages/first-run.js') }}"></script>
+{% endblock %}

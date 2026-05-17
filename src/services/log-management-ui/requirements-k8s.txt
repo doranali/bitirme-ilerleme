@@ -1,0 +1,3 @@
+# K8s modu için ek paket (opsiyonel)
+# Kullanım: pip install -r requirements-k8s.txt
+kubernetes==30.1.0

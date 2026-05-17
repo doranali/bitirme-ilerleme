@@ -1,0 +1,479 @@
+/* =====================================================================
+ * Setup Wizard (Faz 8) — ilk kurulum overlay
+ * ===================================================================== */
+
+.lp-setup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.7);
+    z-index: 11800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    overflow: auto;
+}
+
+.lp-setup-card {
+    background: var(--bg-surface);
+    border-radius: 0.7rem;
+    box-shadow: var(--shadow-lg);
+    max-width: 1100px;
+    width: 100%;
+    padding: 1.4rem 1.4rem 1.2rem;
+    max-height: 94vh;
+    overflow: auto;
+    border-top: 5px solid var(--color-primary);
+}
+
+.lp-setup-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.85rem;
+    align-items: flex-start;
+    margin-bottom: 0.85rem;
+}
+
+.lp-setup-logo {
+    font-size: 1.6rem;
+    color: var(--color-primary);
+    margin-bottom: 0.2rem;
+}
+
+.lp-setup-head h2 {
+    margin: 0 0 0.25rem;
+    font-size: 1.3rem;
+}
+
+.lp-setup-progress {
+    height: 8px;
+    background: var(--color-light);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+
+.lp-setup-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-success));
+    transition: width 0.3s ease;
+}
+
+.lp-setup-progress-label {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 0.4rem 0 0.85rem;
+}
+
+.lp-setup-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.lp-setup-step {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.85rem;
+    padding: 0.75rem 0.95rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    background: var(--bg-main);
+    align-items: center;
+}
+
+.lp-setup-step-critical {
+    border-left: 4px solid var(--color-warning);
+}
+
+.lp-setup-step-done {
+    border-left: 4px solid var(--color-success);
+    background: rgba(5, 150, 105, 0.05);
+}
+
+.lp-setup-step-icon {
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    background: var(--bg-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-primary);
+    font-size: 1rem;
+    display: grid;
+    place-items: center;
+}
+
+.lp-setup-step-done .lp-setup-step-icon {
+    background: var(--color-success);
+    color: #fff;
+    border-color: var(--color-success);
+}
+
+.lp-setup-step-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.lp-setup-footer {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--color-border);
+}
+
+@media (max-width: 600px) {
+    .lp-setup-step {
+        grid-template-columns: auto 1fr;
+    }
+    .lp-setup-step-actions {
+        grid-column: 1 / -1;
+        flex-direction: row;
+    }
+}
+
+/* =====================================================================
+ * Setup Wizard v2 — 9 adimli form layout
+ * ===================================================================== */
+
+.lp-setup-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    margin: 0 0 0.85rem;
+    background: linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0.04));
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-left: 4px solid var(--color-primary);
+    border-radius: 0.5rem;
+}
+
+.lp-setup-banner.lp-setup-banner-critical {
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.04));
+    border-color: rgba(239, 68, 68, 0.4);
+    border-left-color: var(--color-danger, #ef4444);
+}
+
+.lp-setup-banner-icon {
+    font-size: 1.4rem;
+    color: var(--color-primary);
+}
+
+.lp-setup-banner.lp-setup-banner-critical .lp-setup-banner-icon {
+    color: var(--color-danger, #ef4444);
+}
+
+.lp-setup-banner-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.lp-setup-banner-body strong {
+    font-size: 0.95rem;
+}
+
+.lp-setup-banner-body span {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.lp-setup-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+@media (max-width: 860px) {
+    .lp-setup-layout { grid-template-columns: 1fr; }
+}
+
+.lp-setup-sidebar {
+    background: var(--bg-main);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    max-height: 70vh;
+    overflow: auto;
+}
+
+.lp-setup-section + .lp-setup-section { margin-top: 0.85rem; }
+
+.lp-setup-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.lp-setup-section-count {
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.lp-setup-section-desc {
+    padding: 0 0.4rem 0.4rem;
+    font-size: 0.78rem;
+}
+
+.lp-setup-steplist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.lp-setup-steplist li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.55rem;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+    font-size: 0.88rem;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.lp-setup-steplist li:hover { background: var(--bg-surface); }
+
+.lp-setup-steplist li.active {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.35);
+    font-weight: 600;
+}
+
+.lp-setup-steplist li.done .lp-setup-step-title { color: var(--text-muted); text-decoration: line-through; }
+.lp-setup-steplist li.critical { color: var(--color-danger, #ef4444); }
+
+.lp-setup-steplist li > i:first-child {
+    width: 1.1rem;
+    text-align: center;
+    color: var(--color-primary);
+}
+.lp-setup-steplist li.done > i:first-child { color: var(--color-success); }
+
+.lp-setup-step-title { flex: 1; }
+
+.lp-setup-step-check { color: var(--color-success); }
+.lp-setup-step-warn { color: var(--color-danger, #ef4444); }
+
+.lp-setup-detail {
+    background: var(--bg-main);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 1rem 1.2rem;
+    min-height: 50vh;
+}
+
+.lp-setup-detail-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+    align-items: flex-start;
+    margin-bottom: 0.9rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.lp-setup-detail-head h3 {
+    margin: 0.2rem 0;
+    font-size: 1.1rem;
+}
+
+.lp-setup-detail-section {
+    display: inline-block;
+    padding: 0.1rem 0.55rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-radius: 1rem;
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--color-primary);
+}
+
+.lp-setup-detail-section.critical { background: rgba(239, 68, 68, 0.12); color: var(--color-danger, #ef4444); }
+.lp-setup-detail-section.warn { background: rgba(245, 158, 11, 0.12); color: var(--color-warning); }
+.lp-setup-detail-section.info { background: rgba(56, 189, 248, 0.12); color: var(--color-info, #0284c7); }
+
+.lp-setup-note {
+    background: var(--bg-surface);
+    border-left: 3px solid var(--color-info, #0284c7);
+    padding: 0.5rem 0.7rem;
+    border-radius: 0.3rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 0.9rem;
+}
+
+.lp-setup-formgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 0.85rem;
+}
+
+.lp-setup-formgrid label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.lp-setup-formgrid input,
+.lp-setup-formgrid select {
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.35rem;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.lp-setup-formgrid input:focus,
+.lp-setup-formgrid select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+.lp-setup-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.85rem;
+}
+
+.lp-setup-radio {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.65rem;
+    align-items: flex-start;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.4rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.lp-setup-radio:hover { border-color: var(--color-primary); }
+.lp-setup-radio input[type="radio"] { margin-top: 0.3rem; }
+.lp-setup-radio:has(input:checked) {
+    background: rgba(99, 102, 241, 0.06);
+    border-color: var(--color-primary);
+}
+
+.lp-setup-radio strong { display: block; margin-bottom: 0.15rem; }
+.lp-setup-radio small { font-size: 0.78rem; }
+
+.lp-setup-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 0.6rem;
+}
+
+.lp-setup-form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.lp-setup-test-result {
+    font-size: 0.85rem;
+}
+
+.lp-setup-ok {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
+    color: var(--color-success);
+    background: rgba(5, 150, 105, 0.08);
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.3rem;
+    font-size: 0.85rem;
+    border: 1px solid rgba(5, 150, 105, 0.25);
+}
+
+.lp-setup-warn {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
+    color: var(--color-danger, #ef4444);
+    background: rgba(239, 68, 68, 0.08);
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.3rem;
+    font-size: 0.85rem;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.lp-setup-cards-3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.7rem;
+    margin: 0.85rem 0;
+}
+
+.lp-setup-card-item {
+    background: var(--bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.45rem;
+    padding: 0.85rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.lp-setup-card-item i {
+    font-size: 1.6rem;
+    color: var(--color-primary);
+}
+
+.lp-setup-disktable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin-top: 0.5rem;
+}
+
+.lp-setup-disktable th,
+.lp-setup-disktable td {
+    padding: 0.35rem 0.55rem;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.lp-setup-disktable tr.warn { background: rgba(245, 158, 11, 0.06); }
+.lp-setup-disktable tr.critical { background: rgba(239, 68, 68, 0.08); }
+
+.lp-setup-details {
+    margin-top: 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.4rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-surface);
+}
+
+.lp-setup-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.lp-setup-signer-urls label[data-show-when] { /* dinamik gosterim, JS yonetir */ }

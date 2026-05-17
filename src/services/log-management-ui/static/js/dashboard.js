@@ -53,6 +53,220 @@ let guidedSettings = [];
 let guidedSettingsDraftValues = {};
 let activeSettingsGroup = 'all';
 const collapsedSettingsGroups = new Set();
+
+/** @type {{ checkedAt?: string, steps?: Record<string, { status?: string, hint?: string }>, summary?: { doneCount?: number, total?: number } } | null} */
+let lastSetupReadiness = null;
+
+const SETUP_JOURNEY_DISMISS_KEY = 'setup_journey_dismissed_v1';
+
+/** Kurulum yolculuğu — sıra LOG_AKISI / prod checklist ile uyumlu */
+const SETUP_JOURNEY_STEPS = [
+    {
+        id: 'identity',
+        title: '1. Kimlik ve ortam',
+        lead: 'Şirket kodu (LOG_SYSTEM_COMPANY_ID) ve kamuya açık adres.',
+        tab: 'settings',
+        anchor: 'settings-block-catalog'
+    },
+    {
+        id: 'health',
+        title: '2. Sağlık ve yapılandırma',
+        lead: 'Çekirdek servisler, Fluent Bit ve Graylog erişimi.',
+        tab: 'overview',
+        anchor: 'setup-anchor-health'
+    },
+    {
+        id: 'storage',
+        title: '3. Depolama',
+        lead: 'Veri dizini ayrı disk üzerinde ve yazılabilir olmalı.',
+        tab: 'settings',
+        anchor: 'settings-storage-data-disk'
+    },
+    {
+        id: 'security',
+        title: '4. Güvenlik ve syslog politikası',
+        lead: 'Güvenilir syslog kaynakları (boş liste güvenlik politikası nedeniyle trafiği düşürebilir).',
+        tab: 'agent-fleet',
+        anchor: 'setup-anchor-security'
+    },
+    {
+        id: 'ingest',
+        title: '5. Uç ingest',
+        lead: 'Enrollment token ve kurulum sihirbazı.',
+        tab: 'agent-fleet',
+        anchor: 'fleet-enrollment-card',
+        openWizard: true
+    },
+    {
+        id: 'validation',
+        title: '6. Doğrulama',
+        lead: 'Sanity check ve örnek log akışı.',
+        tab: 'overview',
+        anchor: 'setup-anchor-ops'
+    },
+    {
+        id: 'advanced',
+        title: '7. Normalizasyon (isteğe bağlı)',
+        lead: 'QC ve şema — ingest stabil olduktan sonra.',
+        tab: 'normalization',
+        anchor: 'setup-anchor-normalization'
+    }
+];
+
+function setupJourneyDismissed() {
+    try {
+        return localStorage.getItem(SETUP_JOURNEY_DISMISS_KEY) === '1';
+    } catch (e) {
+        return false;
+    }
+}
+
+function refreshSetupJourneyShell() {
+    const card = document.getElementById('setup-journey-card');
+    const collapsed = document.getElementById('setup-journey-collapsed-bar');
+    const notice = document.getElementById('setup-journey-role-notice');
+    if (!card || !collapsed || !notice) {
+        return;
+    }
+
+    if (!hasAtLeastRole('operator')) {
+        notice.style.display = '';
+        card.style.display = 'none';
+        collapsed.style.display = 'none';
+        return;
+    }
+    notice.style.display = 'none';
+
+    if (setupJourneyDismissed()) {
+        card.style.display = 'none';
+        collapsed.style.display = '';
+    } else {
+        collapsed.style.display = 'none';
+        card.style.display = '';
+        void fetchSetupReadinessAndRender();
+    }
+}
+
+async function fetchSetupReadinessAndRender() {
+    if (!hasAtLeastRole('operator')) {
+        return;
+    }
+    if (setupJourneyDismissed()) {
+        return;
+    }
+    try {
+        const data = await apiRequest('/api/setup-readiness');
+        lastSetupReadiness = data;
+        renderSetupJourneySteps(data);
+    } catch (e) {
+        console.warn('setup-readiness', e);
+        lastSetupReadiness = null;
+        const ul = document.getElementById('setup-journey-steps');
+        if (ul) {
+            ul.innerHTML = `<li class="lp-help-muted" style="padding:0.5rem;">Durum alınamadı: ${escapeHtml(e.message || String(e))}</li>`;
+        }
+    }
+}
+
+function renderSetupJourneySteps(data) {
+    const ul = document.getElementById('setup-journey-steps');
+    const fill = document.getElementById('setup-journey-progress-fill');
+    const label = document.getElementById('setup-journey-progress-label');
+    if (!ul) {
+        return;
+    }
+
+    const stepsState = (data && data.steps) || {};
+    const summary = (data && data.summary) || {};
+    const total = summary.total || SETUP_JOURNEY_STEPS.length;
+    const doneCount = typeof summary.doneCount === 'number' ? summary.doneCount : 0;
+    const pct = total > 0 ? Math.min(100, Math.round((doneCount / total) * 100)) : 0;
+
+    const labels = { done: 'Tamam', partial: 'Kısmi', blocked: 'Engel', unknown: 'Belirsiz' };
+
+    ul.innerHTML = SETUP_JOURNEY_STEPS.map((meta) => {
+        const st = stepsState[meta.id] || {};
+        const statusRaw = st.status || 'unknown';
+        const status = ['done', 'partial', 'blocked', 'unknown'].includes(statusRaw) ? statusRaw : 'unknown';
+        const hint = st.hint || meta.lead;
+        const statusLabel = labels[status] || statusRaw;
+
+        return `<li class="setup-journey-row" role="listitem">
+            <div class="setup-journey-row-meta">
+                <div class="setup-journey-row-title">${escapeHtml(meta.title)}</div>
+                <div class="setup-journey-row-hint">${escapeHtml(hint)}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap;">
+                <span class="setup-journey-status ${status}">${escapeHtml(statusLabel)}</span>
+                <button type="button" class="btn btn-sm btn-primary setup-journey-goto" data-step="${escapeHtml(meta.id)}">Git</button>
+            </div>
+        </li>`;
+    }).join('');
+
+    ul.querySelectorAll('.setup-journey-goto').forEach((btn) => {
+        btn.addEventListener('click', () => gotoSetupStep(btn.getAttribute('data-step')));
+    });
+
+    if (fill) {
+        fill.style.width = `${pct}%`;
+    }
+    if (label) {
+        label.textContent = `${doneCount}/${total} otomatik kontrol • ${pct}%`;
+    }
+}
+
+function gotoSetupStep(stepId) {
+    const meta = SETUP_JOURNEY_STEPS.find((s) => s.id === stepId);
+    if (!meta) {
+        return;
+    }
+
+    if (meta.openWizard) {
+        switchTab('agent-fleet');
+        setTimeout(() => {
+            document.getElementById('agent-fleet-mode-wizard')?.click();
+            document.getElementById(meta.anchor || 'fleet-enrollment-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 450);
+        return;
+    }
+
+    switchTab(meta.tab);
+    setTimeout(() => {
+        if (meta.anchor) {
+            document.getElementById(meta.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }, 300);
+}
+
+function bindSetupJourneyUiControls() {
+    const dismissBtn = document.getElementById('setup-journey-dismiss-btn');
+    if (dismissBtn && !dismissBtn.dataset.bound) {
+        dismissBtn.dataset.bound = '1';
+        dismissBtn.addEventListener('click', () => {
+            try {
+                localStorage.setItem(SETUP_JOURNEY_DISMISS_KEY, '1');
+            } catch (e) { /* ignore */ }
+            refreshSetupJourneyShell();
+        });
+    }
+    const restoreBtn = document.getElementById('setup-journey-restore-btn');
+    if (restoreBtn && !restoreBtn.dataset.bound) {
+        restoreBtn.dataset.bound = '1';
+        restoreBtn.addEventListener('click', () => {
+            try {
+                localStorage.removeItem(SETUP_JOURNEY_DISMISS_KEY);
+            } catch (e) { /* ignore */ }
+            refreshSetupJourneyShell();
+        });
+    }
+    const refreshBtn = document.getElementById('setup-journey-refresh-btn');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+        refreshBtn.dataset.bound = '1';
+        refreshBtn.addEventListener('click', () => {
+            void fetchSetupReadinessAndRender();
+        });
+    }
+}
 let pendingSettingChange = null;
 let settingsWritable = true;
 let settingsWriteMessage = '';
@@ -124,8 +338,144 @@ const settingsGuides = {
     SESSION_TIMEOUT_MINUTES: {
         placeholder: '60',
         hint: 'Önerilen aralık: 5 - 1440 dakika'
+    },
+    LOG_SYSTEM_COMPANY_ID: {
+        placeholder: 'ornek-kurum',
+        hint: 'Kurum kısa kodu (default olamaz). Küçük harf, rakam, tire veya alt çizgi; 2–64 karakter.'
+    },
+    LOG_PLATFORM_PUBLIC_BASE_URL: {
+        placeholder: 'https://logs.ornek.gov.tr',
+        hint: 'Dışarıdan panele tam taban adres. Boşsa HOST + şema kullanılır.'
+    },
+    LOG_PLATFORM_PUBLIC_HOST: {
+        placeholder: 'logs.ornek.gov.tr',
+        hint: 'Sadece sunucu adı; https:// ve port yazmayın. BASE_URL doluysa çoğu durumda kullanılmaz.'
+    },
+    LOG_PLATFORM_PUBLIC_SCHEME: {
+        placeholder: '',
+        hint: 'HOST ile birlikte http veya https. Üretim ortamında https zorunludur.'
     }
 };
+
+let _lpHintSeq = 0;
+
+/** Düz metin ipuçları (XSS yok): kaçış + satır sonu */
+function lpHintFormatPartsToHtml(parts) {
+    const t = (parts || []).filter(Boolean).join('\n\n');
+    if (!t) return '';
+    return escapeHtml(t).replace(/\n/g, '<br>');
+}
+
+/** Ayar kartı / sekmeler için «?» + gizli popover (içerik düz metin) */
+function lpHintMarkupFromParts(parts) {
+    const inner = lpHintFormatPartsToHtml(parts);
+    if (!inner) return '';
+    const uid = `lp-ph-${++_lpHintSeq}`;
+    return `<span class="lp-hint" data-lp-plain-hint><button type="button" class="lp-hint-btn" data-lp-plain-hint-btn aria-expanded="false" aria-controls="${uid}-p" id="${uid}-b" aria-label="Alan açıklaması" title="Yardım">?</button><span class="lp-hint-popover" id="${uid}-p" role="tooltip" hidden><span class="lp-hint-popover-inner">${inner}</span></span></span>`;
+}
+
+/** Çağıranın kaçışlı / güvenilir HTML ürettiği ipuçları (<code> vb.) */
+function lpHintMarkupTrusted(innerHtml) {
+    if (!innerHtml || !String(innerHtml).trim()) return '';
+    const uid = `lp-ph-${++_lpHintSeq}`;
+    return `<span class="lp-hint" data-lp-plain-hint><button type="button" class="lp-hint-btn" data-lp-plain-hint-btn aria-expanded="false" aria-controls="${uid}-p" id="${uid}-b" aria-label="Alan açıklaması" title="Yardım">?</button><span class="lp-hint-popover" id="${uid}-p" role="tooltip" hidden><span class="lp-hint-popover-inner">${innerHtml}</span></span></span>`;
+}
+
+function initLpPlainHintDelegation() {
+    if (window.__lpPlainHintsInit) return;
+    window.__lpPlainHintsInit = true;
+    document.addEventListener('click', function lpPlainHintDocClick(e) {
+        const btn = e.target.closest('[data-lp-plain-hint-btn]');
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const wrap = btn.closest('[data-lp-plain-hint]');
+            const pop = wrap && wrap.querySelector('.lp-hint-popover');
+            const was = wrap && wrap.classList.contains('is-open');
+            document.querySelectorAll('[data-lp-plain-hint].is-open').forEach((w) => {
+                w.classList.remove('is-open');
+                const b = w.querySelector('[data-lp-plain-hint-btn]');
+                const p = w.querySelector('.lp-hint-popover');
+                if (b) b.setAttribute('aria-expanded', 'false');
+                if (p) p.hidden = true;
+            });
+            if (!was && wrap && pop) {
+                wrap.classList.add('is-open');
+                btn.setAttribute('aria-expanded', 'true');
+                pop.hidden = false;
+            }
+            return;
+        }
+        if (!e.target.closest('[data-lp-plain-hint]')) {
+            document.querySelectorAll('[data-lp-plain-hint].is-open').forEach((w) => {
+                w.classList.remove('is-open');
+                const b = w.querySelector('[data-lp-plain-hint-btn]');
+                const p = w.querySelector('.lp-hint-popover');
+                if (b) b.setAttribute('aria-expanded', 'false');
+                if (p) p.hidden = true;
+            });
+        }
+    });
+    document.addEventListener('keydown', function lpPlainHintKey(e) {
+        if (e.key !== 'Escape') return;
+        document.querySelectorAll('[data-lp-plain-hint].is-open').forEach((w) => {
+            w.classList.remove('is-open');
+            const b = w.querySelector('[data-lp-plain-hint-btn]');
+            const p = w.querySelector('.lp-hint-popover');
+            if (b) b.setAttribute('aria-expanded', 'false');
+            if (p) p.hidden = true;
+        });
+    });
+}
+
+/** Statik dashboard.html ipuçları; HTML anahtarlarında yalnızca sabit güvenilir içerik */
+const DASHBOARD_PAGE_HINTS_HTML = {
+    'hint-settings-perf-body': 'Öneriler, <code>docker-compose.yml</code> içindeki Graylog/OpenSearch giriş noktası ile <strong>aynı formülü</strong> kullanır (%20 rezerv; kalan RAM’de Graylog heap %25, OpenSearch %50, min 512 MB). <strong>Uygula</strong> <code>GRAYLOG_JAVA_HEAP_MB</code> ve <code>OPENSEARCH_JAVA_HEAP_MB</code> yazar; ardından hostta <code>docker compose</code> ile <code>graylog</code> ve <code>opensearch1</code> otomatik yeniden oluşturulur (Docker soketi gerekir). Kapatmak için ortam: <code>LOG_SYSTEM_HEAP_COMPOSE_RECREATE=0</code>. <code>docker-compose.prod.yml</code> gibi farklı profiller sabit <code>JAVA_OPTS</code> kullanabilir.',
+    'hint-services-storage': '<strong>Veri (bind):</strong> O satırdaki servisin bind mount dizinlerinin <code>du</code> ile yaklaşık toplamı. Konteyner başına ayrı kota yok; veri genelde host’ta paylaşılan bir bölümde durur.<br>Disk dolunca / yer açmak için aşağıdaki paylaşılan bölüm özetine bakın veya Ayarlar’daki depolama akışını kullanın.',
+    'hint-setup-journey-lead': 'İlk kurulumda önerilen sıra: kimlik ve ortam → sağlık → depolama → güvenlik → uç ingest → doğrulama → (isteğe bağlı) normalizasyon.<br>Ayrıntı için repo dokümantasyonu: <code style="font-size:0.78rem;">docs/LOG_AKISI_UCTAN_UCA_NORMALIZASYON_TR.md</code>',
+    'hint-obs-streams-block': '<strong>raw_ingest / quality_control / clean_normalized</strong><br>raw_ingest: ham kabul; quality_control: QC; clean_normalized: normalize çıkışı — Kafka topic özetleri.<br><br>quality_control boşsa bu hata olmak zorunda değildir; loglar mevcut profile/mapping ile normalize olup clean_normalized\'a gidiyor olabilir.<br>Bilinmeyen format için akış: quality_control örneği al → profile_resolver + source/destination CSV mapping ekle → graylog-post-init çalıştır → tekrar test et.'
+};
+
+const DASHBOARD_PAGE_HINTS_PLAIN = {
+    'hint-setup-journey-role': 'İlk kurulum yolculuğu için operator veya admin rolüyle oturum açın.',
+    'hint-overview-slo': 'Bu satır Fluent Bit metrik trendine dayanır; henüz ingest yokken tire (—) ve bottleneck «Henüz ölçülemedi» beklenen davranıştır.',
+    'hint-fleet-inventory': 'Boş liste için önce Yenile, gerekirse Disk eşitle. Satıra tıklayarak detayları yönetebilirsiniz.\n\nUç envanteri: kayıtlı hostlar ve son görülme. «Son panel IP» = HTTP ile panele/activate/heartbeat; UDP log kaynağı IP’si değildir.\n\nDetaylar:\n• Güncel: panel heartbeat durumunu gösterir.\n• 24 saat / 7 gün: Graylog mesaj sayısıdır.\n• Syslog-only cihazlar: envanter tablosuna otomatik eklenmeyebilir; alttaki Graylog özetinden izlenir.',
+    'hint-fleet-syslog-summary': 'Son 7 günün network log özeti. Satıra tıklayarak servis dağılımı ve örnek kayıtları görebilirsiniz.',
+    'hint-fleet-syslog-policy': 'Politika: kayıt dışı kaynaklar düşürülür. Yeni kaynak eklemeden log kabul edilmez.',
+    'hint-onboarding-wizard': 'Sihirbaz adımlarını izleyin: profil seçin, token üretin, kurulum komutunu kopyalayın. (Admin yetkisi gerekir.)',
+    'hint-onboarding-caninstall': 'Ajan kurulabiliyorsa Evet; ağ cihazı/syslog için Hayır seçin.',
+    'hint-onboarding-token': 'Profili uygula ve token üret.',
+    'hint-onboarding-test': 'Ajan UDP (JSON) portuna test paketi gönderir.',
+    'hint-onboarding-advanced': 'Gelişmiş mod: profil, token ve kurulum çıktısını manuel yönetir.',
+    'hint-agent-install': 'Token sonrası tek kurulum bağlantısı burada.',
+    'hint-settings-summary': 'Bu bölümde kritik ayarları dosya düzenlemeden yönetebilirsiniz. Her ayar için ne işe yaradığı açıklanır, rolünüze göre yetkili olduğunuz alanları düzenlersiniz.',
+    'hint-settings-catalog': 'Rolünüze göre düzenleyebileceğiniz anahtarlar. Kayıt sonrası otomatik post-check tetiklenebilir; üstteki «Kontrolü Çalıştır» ile isteğe bağlı doğrulama yapın.\n\nHızlı akış: (1) Ayarı seç ve değerini güncelle (2) Detaydan etki alanını kontrol et (3) Kaydet; gerekirse üstteki kontrolü çalıştırın.',
+    'hint-settings-postcheck': 'Health, ingest ve query smoke kontrolleri burada listelenir. «Kontrolü Çalıştır» ile tetikleyin.',
+    'hint-storage-shortcuts': 'Sık kullanılan dosyaları Yapılandırma sekmesinde açar; düzenleme rolünüze bağlıdır.',
+    'hint-k8s-rollout': 'Servislerin min/max replica ve CPU/Memory hedeflerini no-code olarak yönetin.',
+    'hint-k8s-rollback': 'Deployment yeniden başlatma ve revision bazlı geri dönüş işlemleri.',
+    'hint-obs-ingest': 'Fluent Bit: tüm UDP girişleri toplam kayıt (Prometheus). Graylog ile bire bir değildir.',
+    'hint-obs-disk': 'Data dizini kullanım oranı',
+    'hint-obs-qc': 'quality_control stream mesaj sayısı',
+    'hint-obs-output-err': 'Fluent Bit output hata sayısı',
+    'hint-obs-resource-bars': 'İlk iki çubuk gerçek CPU/RAM ölçümü değildir; Docker çekirdek servislerinin çalışma ve sağlık özetidir. Depolama, panelin gördüğü kök disk doluluğudur (genelde VM ana diski).',
+    'hint-nc-wizard': 'Ağ cihazı logları için üretici/ürün seçimi, alan eşlemesi ve grok deseni. Kayıt öncesi etki alanını kontrol edin.',
+    'hint-nc-wizard-extra': 'OpenSearch ISM: graylog-90gun. Hot 7d → Warm 83d → Delete (90 gün). Grafana/Graylog tam aranabilir. WORM arşiv 2 yıl (5651).',
+    'hint-change-summary': 'Kaydetmeden önce etki alanını kontrol edin.',
+    'hint-storage-raw-hint': 'Önce «Disk listesini yenile» veya «Sistemi yeni diski tanıtsın» kullanın. Ham disk uygunluğu ve uyarılar hemen alt satırda güncellenir.',
+    'hint-storage-custom-path': 'Özel yol doluysa liste yerine o kullanılır.'
+};
+
+function mountDashboardStaticHints() {
+    Object.entries(DASHBOARD_PAGE_HINTS_PLAIN).forEach(([id, text]) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = lpHintMarkupFromParts([text]);
+    });
+    Object.entries(DASHBOARD_PAGE_HINTS_HTML).forEach(([id, html]) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = lpHintMarkupTrusted(html);
+    });
+}
 
 // Tehlikeli işlem onay modalı - yanlışlıkla sistemi bozmayı önler
 let confirmDangerResolve = null;
@@ -360,6 +710,7 @@ async function updateStorageApiStaleBanner() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    initLpPlainHintDelegation();
     initializeTheme();
     initializeDashboard();
     setupEventListeners();
@@ -373,7 +724,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initializeDashboard() {
     console.log('Dashboard initializing...');
+    mountDashboardStaticHints();
     setupNavigationListeners();
+    bindSetupJourneyUiControls();
 }
 
 function hasAtLeastRole(requiredRole) {
@@ -501,6 +854,7 @@ function applyRoleBasedUiAccess() {
     }
 
     applyStoragePreparePolicyLocks();
+    refreshSetupJourneyShell();
 }
 
 function applyPlatformSpecificVisibility() {
@@ -607,6 +961,10 @@ function switchTab(tabName) {
     } else if (tabName === 'archive') {
         loadArchiveStatus();
         loadArchiveRetention();
+    }
+
+    if (tabName === 'overview') {
+        void fetchSetupReadinessAndRender();
     }
 }
 
@@ -1186,10 +1544,10 @@ function renderStorageWorkflow(wf) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
     const title = wf.title
-        ? `<div class="help-text" style="margin-bottom:0.25rem;"><strong>${esc(wf.title)}</strong></div>`
+        ? `<div class="lp-help-muted" style="margin-bottom:0.25rem;"><strong>${esc(wf.title)}</strong></div>`
         : '';
     const items = wf.steps.map((s) => `<li>${esc(s)}</li>`).join('');
-    el.innerHTML = `${title}<ol class="help-text" style="margin:0.2rem 0 0 1.1rem;line-height:1.45;">${items}</ol>`;
+    el.innerHTML = `${title}<ol class="lp-help-muted" style="margin:0.2rem 0 0 1.1rem;line-height:1.45;">${items}</ol>`;
 }
 
 function renderEligibleRawDisks() {
@@ -1322,12 +1680,12 @@ function renderSigningOnboardingBanner(mountSnap) {
         el.style.borderLeft = '3px solid var(--color-warning, #d97706)';
         el.className = 'settings-summary';
         el.innerHTML = `<strong>Kurulum sırası — 1. Veri diski</strong>
-            <div class="help-text" style="margin-top:0.35rem;">5651 ve log arşivi için veri dizini OS diskinden ayrı olmalı. Bu adımı tamamladıktan sonra imzalama ayarlarına geçin. <a href="#" id="signing-cta-storage">Veri diski bölümüne git →</a></div>`;
+            <div class="onboarding-callout" style="margin-top:0.35rem;">5651 ve log arşivi için veri dizini OS diskinden ayrı olmalı. Bu adımı tamamladıktan sonra imzalama ayarlarına geçin. <a href="#" id="signing-cta-storage">Veri diski bölümüne git →</a></div>`;
     } else {
         el.style.borderLeft = '3px solid var(--color-info, #0284c7)';
         el.className = 'settings-summary';
         el.innerHTML = `<strong>Kurulum sırası — 2. İmzalama (5651)</strong>
-            <div class="help-text" style="margin-top:0.35rem;">Gerçek kaynaklardan log toplamaya geçmeden önce <strong>5651 Uyum</strong> grubunda imza tipini (TÜBİTAK veya OpenSSL), gerekirse TSA URL ve arşiv hedefini tanımlayın. <a href="#" id="signing-cta-5651">5651 ayarlarına git →</a></div>`;
+            <div class="onboarding-callout" style="margin-top:0.35rem;">Gerçek kaynaklardan log toplamaya geçmeden önce <strong>5651 Uyum</strong> grubunda imza tipini (TÜBİTAK veya OpenSSL), gerekirse TSA URL ve arşiv hedefini tanımlayın. <a href="#" id="signing-cta-5651">5651 ayarlarına git →</a></div>`;
     }
     const aStorage = document.getElementById('signing-cta-storage');
     const a5651 = document.getElementById('signing-cta-5651');
@@ -1383,7 +1741,7 @@ function renderStorageMountBanner(m) {
         Array.isArray(m.summaryLines) && m.summaryLines.length
             ? `<details class="storage-details" style="margin-top:0.45rem;border:0;padding:0;"><summary style="cursor:pointer;">Teknik ayrıntı</summary><div class="inner" style="margin-top:0.35rem;">${src}<br>${m.summaryLines.map((x) => esc(x)).join('<br>')}</div></details>`
             : `<details class="storage-details" style="margin-top:0.45rem;border:0;padding:0;"><summary style="cursor:pointer;">Teknik ayrıntı</summary><div class="inner" style="margin-top:0.35rem;">${src}</div></details>`;
-    el.innerHTML = `<strong>${title}</strong><div class="help-text" style="margin:0.35rem 0 0;font-size:0.9rem;">${lead}</div>${detail}`;
+    el.innerHTML = `<strong>${title}</strong><div class="lp-help-muted" style="margin:0.35rem 0 0;font-size:0.9rem;">${lead}</div>${detail}`;
     if (ackRow) ackRow.style.display = same ? 'block' : 'none';
     applyStorageDiskPolicyUI(m);
     renderSigningOnboardingBanner(m);
@@ -1422,20 +1780,20 @@ function renderDataDiskGrowUI(g) {
     const partG = fmtGiB(g.partitionBytes);
     const sameSize = g.diskPartitionSizesMatchApprox === true;
     const sizeLine = sameSize
-        ? `<div class="help-text" style="margin-top:0.25rem;">Disk ve bölüm kapasitesi (yaklaşık): ~${diskG} GiB</div>`
-        : `<div class="help-text" style="margin-top:0.25rem;">Disk ~${diskG} GiB • Bölüm ~${partG} GiB</div>`;
+        ? `<div class="lp-help-muted" style="margin-top:0.25rem;">Disk ve bölüm kapasitesi (yaklaşık): ~${diskG} GiB</div>`
+        : `<div class="lp-help-muted" style="margin-top:0.25rem;">Disk ~${diskG} GiB • Bölüm ~${partG} GiB</div>`;
     const tgt = g.targetFilesystemBytesAfterGrowApprox;
     const afterLine =
         g.canGrow && typeof tgt === 'number'
-            ? `<div class="help-text" style="margin-top:0.25rem;">Genişletme sonrası ext4 toplam boyut (yaklaşık): ~${fmtGiB(tgt)} GiB</div>`
+            ? `<div class="lp-help-muted" style="margin-top:0.25rem;">Genişletme sonrası ext4 toplam boyut (yaklaşık): ~${fmtGiB(tgt)} GiB</div>`
             : '';
     const rescanNote =
         g.hostBusRescanBeforeProbe === true
-            ? '<div class="help-text" style="margin-top:0.25rem;">Ölçümden önce konukta veriyolu + disk <code>rescan</code> çalıştırıldı.</div>'
+            ? '<div class="lp-help-muted" style="margin-top:0.25rem;">Ölçümden önce konukta veriyolu + disk <code>rescan</code> çalıştırıldı.</div>'
             : '';
     const meta = [
         g.message ? `<div>${g.message}</div>` : '',
-        g.partitionPath ? `<div class="help-text" style="margin-top:0.25rem;">Bölüm: <code>${g.partitionPath}</code> • ext4: ${g.supportedFilesystem ? 'evet' : 'hayır'}</div>` : '',
+        g.partitionPath ? `<div class="lp-help-muted" style="margin-top:0.25rem;">Bölüm: <code>${g.partitionPath}</code> • ext4: ${g.supportedFilesystem ? 'evet' : 'hayır'}</div>` : '',
         sizeLine,
         rescanNote,
         afterLine
@@ -1537,25 +1895,25 @@ function renderOsDiskGrowUI(g) {
     const partG = fmtGiB(g.partitionBytes);
     const sameSize = g.diskPartitionSizesMatchApprox === true;
     const sizeLine = sameSize
-        ? `<div class="help-text" style="margin-top:0.25rem;">Disk ve kök bölüm (yaklaşık): ~${diskG} GiB</div>`
-        : `<div class="help-text" style="margin-top:0.25rem;">Disk ~${diskG} GiB • Bölüm ~${partG} GiB</div>`;
+        ? `<div class="lp-help-muted" style="margin-top:0.25rem;">Disk ve kök bölüm (yaklaşık): ~${diskG} GiB</div>`
+        : `<div class="lp-help-muted" style="margin-top:0.25rem;">Disk ~${diskG} GiB • Bölüm ~${partG} GiB</div>`;
     const tgt = g.targetFilesystemBytesAfterGrowApprox;
     const afterLine =
         g.canGrow && typeof tgt === 'number'
-            ? `<div class="help-text" style="margin-top:0.25rem;">Genişletme sonrası ext4 (yaklaşık): ~${fmtGiB(tgt)} GiB</div>`
+            ? `<div class="lp-help-muted" style="margin-top:0.25rem;">Genişletme sonrası ext4 (yaklaşık): ~${fmtGiB(tgt)} GiB</div>`
             : '';
     const risk = g.riskWarning
-        ? `<div class="help-text" style="margin-top:0.35rem;color:var(--color-warning-text,#92400e);">${g.riskWarning}</div>`
+        ? `<div class="lp-help-muted" style="margin-top:0.35rem;color:var(--color-warning-text,#92400e);">${g.riskWarning}</div>`
         : '';
     const devLine =
         g.scope === 'lvm_root' && (g.physicalVolume || g.volumeGroup)
-            ? `<div class="help-text" style="margin-top:0.25rem;">LVM: LV <code>${g.partitionPath || '—'}</code> • PV <code>${g.physicalVolume || '—'}</code> • VG <code>${g.volumeGroup || '—'}</code> • ext4: ${g.supportedFilesystem ? 'evet' : 'hayır'}</div>`
+            ? `<div class="lp-help-muted" style="margin-top:0.25rem;">LVM: LV <code>${g.partitionPath || '—'}</code> • PV <code>${g.physicalVolume || '—'}</code> • VG <code>${g.volumeGroup || '—'}</code> • ext4: ${g.supportedFilesystem ? 'evet' : 'hayır'}</div>`
             : g.partitionPath
-              ? `<div class="help-text" style="margin-top:0.25rem;">Bölüm: <code>${g.partitionPath}</code> • ext4: ${g.supportedFilesystem ? 'evet' : 'hayır'}</div>`
+              ? `<div class="lp-help-muted" style="margin-top:0.25rem;">Bölüm: <code>${g.partitionPath}</code> • ext4: ${g.supportedFilesystem ? 'evet' : 'hayır'}</div>`
               : '';
     const rescanNote =
         g.hostBusRescanBeforeProbe === true
-            ? '<div class="help-text" style="margin-top:0.25rem;">Ölçümden önce konukta veriyolu + disk <code>rescan</code> çalıştırıldı (hypervisor’da büyütme sonrası ~3 sn sürebilir).</div>'
+            ? '<div class="lp-help-muted" style="margin-top:0.25rem;">Ölçümden önce konukta veriyolu + disk <code>rescan</code> çalıştırıldı (hypervisor’da büyütme sonrası ~3 sn sürebilir).</div>'
             : '';
     const meta = [
         g.message ? `<div>${g.message}</div>` : '',
@@ -2156,7 +2514,7 @@ function renderAgentHeartbeatSummary() {
     if (!summary) return;
 
     if (!agentNodes.length) {
-        summary.innerHTML = '<span class="help-text">Kayıtlı uç yok.</span> <span class="status-badge status-unknown">—</span>';
+        summary.innerHTML = '<span class="lp-help-muted">Kayıtlı uç yok.</span> <span class="status-badge status-unknown">—</span>';
         return;
     }
 
@@ -2175,7 +2533,7 @@ function renderAgentHeartbeatSummary() {
         ? 'Kopuk bildirim'
         : (globalLevel === 'warning' ? 'Gecikmiş' : 'Güncel');
     summary.innerHTML = `
-        <span class="help-text">Panel bildirimi (heartbeat): güncel ${ok} · gecikmiş ${warn} · kopuk ${down}</span>
+        <span class="lp-help-muted">Panel bildirimi (heartbeat): güncel ${ok} · gecikmiş ${warn} · kopuk ${down}</span>
         <span class="status-badge status-${globalLevel}">${globalLabel}</span>
     `;
 }
@@ -2214,7 +2572,7 @@ function renderFleetHostsTable() {
     }
 
     if (!agentNodes.length) {
-        container.innerHTML = '<p class="help-text">Kayıtlı uç nokta yok.</p>';
+        container.innerHTML = '<p class="lp-help-muted">Kayıtlı uç nokta yok.</p>';
         return;
     }
 
@@ -2224,7 +2582,7 @@ function renderFleetHostsTable() {
         : agentNodes;
 
     if (!filtered.length) {
-        container.innerHTML = '<p class="help-text">Arama ile eşleşen host yok.</p>';
+        container.innerHTML = '<p class="lp-help-muted">Arama ile eşleşen host yok.</p>';
         return;
     }
 
@@ -2246,7 +2604,7 @@ function renderFleetHostsTable() {
         const err24 = node.graylogError24h ? String(node.graylogError24h) : '';
         const err7 = node.graylogError7d ? String(node.graylogError7d) : '';
         const gHint = (err24 || err7)
-            ? '<span class="help-text" title="Graylog sorgusu hata veya indeks yok; hücre ipucuna bakın">*</span>'
+            ? '<span class="lp-help-muted" title="Graylog sorgusu hata veya indeks yok; hücre ipucuna bakın">*</span>'
             : '';
         const t24 = err24 ? ` title="${escapeHtml(err24)}"` : '';
         const t7 = err7 ? ` title="${escapeHtml(err7)}"` : '';
@@ -2265,7 +2623,7 @@ function renderFleetHostsTable() {
     }).join('');
 
     container.innerHTML = `
-        <p class="help-text" style="margin:0 0 0.5rem 0;">Satıra tıklayın: özet ve son mesajlar. «Son panel IP» = HTTP ile panele/activate/heartbeat; UDP log kaynağı IP’si değildir.</p>
+        <p class="lp-hint-row" style="margin:0 0 0.5rem 0;">${lpHintMarkupFromParts(['Satıra tıklayın: özet ve son mesajlar. «Son panel IP» = HTTP ile panele/activate/heartbeat; UDP log kaynağı IP’si değildir.'])}</p>
         <div class="fleet-hosts-table-wrap">
         <table class="fleet-data-table">
             <thead><tr>
@@ -2296,7 +2654,7 @@ async function openFleetHostModal(hostname) {
         const d = await apiRequest(`/api/agent/fleet-host-detail?hostname=${encodeURIComponent(hostname)}`);
         const node = d.node || {};
         if (!d.node) {
-            body.innerHTML = `<p class="help-text">Bu ada ait görünür envanter satırı yok (silinmiş, gizlenmiş veya Graylog eşleşmesi farklı olabilir).</p>
+            body.innerHTML = `<p class="lp-help-muted">Bu ada ait görünür envanter satırı yok (silinmiş, gizlenmiş veya Graylog eşleşmesi farklı olabilir).</p>
                 <div style="margin-top:0.55rem;"><button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetHostModal()">Kapat</button></div>`;
             return;
         }
@@ -2304,20 +2662,20 @@ async function openFleetHostModal(hostname) {
         const samples = Array.isArray(g.samples) ? g.samples : [];
         const life = String(node.agentLifecycle || '');
         const unLine = life === 'uninstalled'
-            ? `<dt class="help-text">Kaldırma</dt><dd>${escapeHtml(node.uninstalledAt || '—')} — ${escapeHtml(node.uninstallReason || 'user_uninstall')}</dd>`
+            ? `<dt class="lp-meta-dt">Kaldırma</dt><dd>${escapeHtml(node.uninstalledAt || '—')} — ${escapeHtml(node.uninstallReason || 'user_uninstall')}</dd>`
             : '';
         const relayNote =
             String(node.profileId || '') === 'syslog-relay-v1'
-                ? '<p class="help-text" style="margin:0 0 0.65rem 0;font-size:0.82rem;">Bu satır <strong>token ile kurulan syslog relay</strong> içindir. Doğrudan merkeze syslog basan <strong>vCenter / firewall</strong> çoğu kurulumda ayrı token kullanmaz; özet için üstteki <strong>Syslog / kayıtlı ağ görünürlüğü</strong> bölümündeki transport IP kartlarına bakın.</p>'
+                ? `<p class="lp-hint-row" style="margin:0 0 0.65rem 0; font-size:0.82rem;">${lpHintMarkupTrusted('Bu satır <strong>token ile kurulan syslog relay</strong> içindir. Doğrudan merkeze syslog basan <strong>vCenter / firewall</strong> çoğu kurulumda ayrı token kullanmaz; özet için üstteki <strong>Syslog / kayıtlı ağ görünürlüğü</strong> bölümündeki transport IP kartlarına bakın.')}</p>`
                 : '';
         const meta = `${relayNote}
             <dl style="margin:0 0 0.75rem 0; display:grid; gap:0.35rem 1rem; grid-template-columns:auto 1fr; font-size:0.88rem;">
-                <dt class="help-text">Tür</dt><dd>${escapeHtml(fleetInventoryKindLabel(node).label)}</dd>
-                <dt class="help-text">Profil</dt><dd>${escapeHtml(node.profileId || '—')}</dd>
-                <dt class="help-text">Son panel IP</dt><dd>${escapeHtml(node.lastSeenIp || '—')}</dd>
-                <dt class="help-text">Son panel bildirimi</dt><dd>${node.lastSeenAt ? escapeHtml(formatRelativeTime(node.lastSeenAt)) : '—'}</dd>
+                <dt class="lp-meta-dt">Tür</dt><dd>${escapeHtml(fleetInventoryKindLabel(node).label)}</dd>
+                <dt class="lp-meta-dt">Profil</dt><dd>${escapeHtml(node.profileId || '—')}</dd>
+                <dt class="lp-meta-dt">Son panel IP</dt><dd>${escapeHtml(node.lastSeenIp || '—')}</dd>
+                <dt class="lp-meta-dt">Son panel bildirimi</dt><dd>${node.lastSeenAt ? escapeHtml(formatRelativeTime(node.lastSeenAt)) : '—'}</dd>
                 ${unLine}
-                <dt class="help-text">Graylog (7 gün)</dt><dd>${formatFleetLogCount(g.total7d)}${g.error ? ` <span class="help-text">(${escapeHtml(g.error)})</span>` : ''}</dd>
+                <dt class="lp-meta-dt">Graylog (7 gün)</dt><dd>${formatFleetLogCount(g.total7d)}${g.error ? ` <span class="lp-help-muted">(${escapeHtml(g.error)})</span>` : ''}</dd>
             </dl>`;
         const emptySamplesButCount =
             !samples.length &&
@@ -2329,12 +2687,12 @@ async function openFleetHostModal(hostname) {
                 const ts = escapeHtml(String(s.timestamp || '—'));
                 const src = escapeHtml(String(s.source || ''));
                 const msg = escapeHtml(String(s.message || '').slice(0, 400));
-                return `<tr><td style="white-space:nowrap; font-size:0.8rem;" class="help-text">${ts}</td><td style="font-size:0.82rem;"><span class="help-text">${src}</span><br>${msg}</td></tr>`;
+                return `<tr><td style="white-space:nowrap; font-size:0.8rem;" class="lp-help-muted">${ts}</td><td style="font-size:0.82rem;"><span class="lp-help-muted">${src}</span><br>${msg}</td></tr>`;
             }).join('');
         } else if (emptySamplesButCount) {
-            logRows = '<tr><td colspan="2" class="help-text">Graylog bu host için sayım gösteriyor ancak örnek satırlar API’de dönmedi. Graylog’ta arama ile doğrulayın; sorun sürerse panel/graylog sürümü bildirin.</td></tr>';
+            logRows = '<tr><td colspan="2" class="lp-help-muted">Graylog bu host için sayım gösteriyor ancak örnek satırlar API’de dönmedi. Graylog’ta arama ile doğrulayın; sorun sürerse panel/graylog sürümü bildirin.</td></tr>';
         } else {
-            logRows = '<tr><td colspan="2" class="help-text">Örnek yok veya Graylog yanıt vermedi.</td></tr>';
+            logRows = '<tr><td colspan="2" class="lp-help-muted">Örnek yok veya Graylog yanıt vermedi.</td></tr>';
         }
         const tokenId = node.tokenId != null && String(node.tokenId).trim() ? String(node.tokenId).trim() : '';
         body.innerHTML = `${meta}
@@ -2342,7 +2700,7 @@ async function openFleetHostModal(hostname) {
             <div style="overflow-x:auto; max-height:280px; overflow-y:auto; border:1px solid var(--color-border); border-radius:0.35rem;">
             <table class="fleet-data-table" style="font-size:0.82rem;"><tbody>${logRows}</tbody></table>
             </div>
-            <p class="help-text" style="margin:0.65rem 0 0 0; font-size:0.78rem;">Listeden kaldırma yalnızca panel görünümünü ve diskteki <code>nodes.json</code> satırını temizler; enrollment token silinmez. Ajan tekrar heartbeat gönderirse satır yeniden görünebilir — o zaman tokenı iptal edin veya yeniden gizleyin.</p>
+            <p class="lp-hint-row" style="margin:0.65rem 0 0 0; font-size:0.78rem;">${lpHintMarkupTrusted('Listeden kaldırma yalnızca panel görünümünü ve diskteki <code>nodes.json</code> satırını temizler; enrollment token silinmez. Ajan tekrar heartbeat gönderirse satır yeniden görünebilir — o zaman tokenı iptal edin veya yeniden gizleyin.')}</p>
             <div style="margin-top:0.55rem; display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:flex-end;">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetHostModal()">Kapat</button>
                 <button type="button" class="btn btn-outline-warning btn-sm" id="fleet-host-hide-from-list-btn">Listeden kaldır…</button>
@@ -2449,7 +2807,7 @@ function renderAgentHistoryTable() {
         const host = escapeHtml(item.nodeHost || '—');
         const createdAbs = item.createdAt ? formatShortDateTimeTr(item.createdAt) : '—';
         const createdRel = item.createdAt ? formatRelativeTime(item.createdAt) : '';
-        const created = item.createdAt ? `${createdAbs} <span class="help-text" style="font-size:0.78rem;">(${createdRel})</span>` : '—';
+        const created = item.createdAt ? `${createdAbs} <span class="lp-help-muted" style="font-size:0.78rem;">(${createdRel})</span>` : '—';
         const expires = formatShortDateTimeTr(item.expiresAt);
         const lastEvt = item.lastSeenAt ? formatRelativeTime(item.lastSeenAt) : '—';
         const actN = item.activationCount || 0;
@@ -2474,7 +2832,7 @@ function renderAgentHistoryTable() {
 
     container.innerHTML = `
         <div style="font-weight:600; margin-bottom:0.35rem;">Kayıt geçmişi (son 20)</div>
-        <p class="help-text" style="margin:0 0 0.45rem 0; font-size:0.78rem;">Son olay: indirme veya aktivasyon. Tablonun içinde kaydırabilirsiniz.</p>
+        <p class="lp-help-muted" style="margin:0 0 0.45rem 0; font-size:0.78rem;">Son olay: indirme veya aktivasyon. Tablonun içinde kaydırabilirsiniz.</p>
         <div class="logs-table-wrap agent-history-table-wrap">
         <table class="logs-table">
             <thead><tr>
@@ -3190,7 +3548,7 @@ function renderSyslogTrustedSourcesPanel() {
     const box = document.getElementById('syslog-trusted-sources-list');
     if (!box) return;
     if (!syslogTrustedSourcesDraft.length) {
-        box.innerHTML = '<span class="help-text">Kayıtlı kaynak yok.</span>';
+        box.innerHTML = '<span class="lp-help-muted">Kayıtlı kaynak yok.</span>';
         renderSyslogTrustedDraftStatus();
         return;
     }
@@ -3262,7 +3620,7 @@ async function loadSyslogTrustedSources() {
         renderSyslogTrustedDraftStatus();
         renderSyslogIngestGuardStatus();
     } catch (e) {
-        if (box) box.innerHTML = `<span class="help-text">Yüklenemedi: ${escapeHtml(e.message || String(e))}</span>`;
+        if (box) box.innerHTML = `<span class="lp-help-muted">Yüklenemedi: ${escapeHtml(e.message || String(e))}</span>`;
         renderSyslogIngestGuardStatus();
     }
 }
@@ -3430,19 +3788,19 @@ async function openFleetSyslogDrilldownModal(emitterIdx, sourceIdx) {
         const glUrl = buildGraylogSearchUrl(glBase, r.query, range);
         const glLink = glUrl
             ? `<a href="${escapeHtml(glUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary" style="margin-top:0.35rem;">Graylog’ta aç</a>`
-            : '<span class="help-text" style="display:inline-block;margin-top:0.35rem;">GRAYLOG_WEB_URL tanımlı değil; sorguyu Graylog’ta elle yapıştırın.</span>';
+            : '<span class="lp-help-muted" style="display:inline-block;margin-top:0.35rem;">GRAYLOG_WEB_URL tanımlı değil; sorguyu Graylog’ta elle yapıştırın.</span>';
         const rows = samples.length
             ? samples
                 .map((s) => {
                     const ts = escapeHtml(String(s.timestamp || '—'));
                     const src = escapeHtml(String(s.source || ''));
                     const msg = escapeHtml(String(s.message || '').slice(0, 420));
-                    return `<tr><td style="white-space:nowrap;font-size:0.78rem;" class="help-text">${ts}</td><td style="font-size:0.82rem;"><span class="help-text">${src}</span><br>${msg}</td></tr>`;
+                    return `<tr><td style="white-space:nowrap;font-size:0.78rem;" class="lp-help-muted">${ts}</td><td style="font-size:0.82rem;"><span class="lp-help-muted">${src}</span><br>${msg}</td></tr>`;
                 })
                 .join('')
-            : '<tr><td colspan="2" class="help-text">Bu filtre için örnek dönmedi veya Graylog yanıtı boş.</td></tr>';
+            : '<tr><td colspan="2" class="lp-help-muted">Bu filtre için örnek dönmedi veya Graylog yanıtı boş.</td></tr>';
         body.innerHTML = `
-            <p class="help-text" style="margin:0 0 0.45rem 0;font-size:0.82rem;">Sorgu:</p>
+            <p class="lp-help-muted" style="margin:0 0 0.45rem 0;font-size:0.82rem;">Sorgu:</p>
             <pre style="font-size:0.75rem;overflow-x:auto;max-height:4.2rem;margin:0 0 0.5rem 0;padding:0.45rem;border:1px solid var(--color-border);border-radius:0.35rem;background:var(--color-light,#f8fafc);">${qStr}</pre>
             ${glLink}
             <div style="font-weight:600;margin:0.75rem 0 0.35rem;font-size:0.9rem;">Örnek mesajlar</div>
@@ -3451,7 +3809,7 @@ async function openFleetSyslogDrilldownModal(emitterIdx, sourceIdx) {
             </div>
             <div style="margin-top:0.65rem;text-align:right;"><button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetSyslogDrilldownModal()">Kapat</button></div>`;
     } catch (err) {
-        body.innerHTML = `<p class="help-text">Hata: ${escapeHtml(err.message || String(err))}</p>
+        body.innerHTML = `<p class="lp-help-muted">Hata: ${escapeHtml(err.message || String(err))}</p>
             <div style="margin-top:0.55rem;text-align:right;"><button type="button" class="btn btn-secondary btn-sm" onclick="closeFleetSyslogDrilldownModal()">Kapat</button></div>`;
     }
 }
@@ -3469,19 +3827,19 @@ async function loadFleetSyslogSummary() {
         el.textContent = '';
         return;
     }
-    el.innerHTML = '<p class="help-text">Graylog syslog özeti yükleniyor…</p>';
+    el.innerHTML = '<p class="lp-help-muted">Graylog syslog özeti yükleniyor…</p>';
     try {
         const d = await apiRequest('/api/ingest/syslog-sources-summary?range=604800');
         fleetSyslogSummaryCache = { ...d, rangeSeconds: d.rangeSeconds || 604800 };
         if (d.error) {
-            el.innerHTML = `<p class="help-text">Özet alınamadı: ${escapeHtml(String(d.error))}</p>`;
+            el.innerHTML = `<p class="lp-help-muted">Özet alınamadı: ${escapeHtml(String(d.error))}</p>`;
             return;
         }
         const emitters = Array.isArray(d.emitters) ? d.emitters : [];
         const rows = Array.isArray(d.senders) ? d.senders : [];
         if (!emitters.length && !rows.length) {
             el.innerHTML =
-                '<p class="help-text">Bu aralıkta <code>log_type:network</code> ile eşleşen örnek yok veya alanlar boş. vCenter’ın gönderdiği host/source alanını Graylog’da kontrol edin.</p>';
+                '<p class="lp-help-muted">Bu aralıkta <code>log_type:network</code> ile eşleşen örnek yok veya alanlar boş. vCenter’ın gönderdiği host/source alanını Graylog’da kontrol edin.</p>';
             return;
         }
         const meta = escapeHtml(`Örneklenen satır: ${d.sampleRows || 0} (üst sınır 450)`);
@@ -3489,17 +3847,17 @@ async function loadFleetSyslogSummary() {
             `Politika: drop unknown · Kayıtlı kaynak: ${d.trustedSourcesCount || 0} · Kayıt dışı gönderici: ${d.unknownEmitterCount || 0}`
         );
         const hint = d.ipHint
-            ? `<p class="help-text" style="margin-top:0.55rem;">${escapeHtml(String(d.ipHint))}</p>`
+            ? `<p class="lp-help-muted" style="margin-top:0.55rem;">${escapeHtml(String(d.ipHint))}</p>`
             : '';
         const extraHint = ((d.trustedSourcesCount || 0) === 0 && (d.unknownEmitterCount || 0) > 0)
-            ? '<p class="help-text" style="margin-top:0.45rem;">Not: Kayıtlı kaynak yokken görülen satırlar geçmiş aralık/önceki kabul kayıtları olabilir; canlı akış all-ingest guard ile drop edilir.</p>'
+            ? '<p class="lp-help-muted" style="margin-top:0.45rem;">Not: Kayıtlı kaynak yokken görülen satırlar geçmiş aralık/önceki kabul kayıtları olabilir; canlı akış all-ingest guard ile drop edilir.</p>'
             : '';
 
         const emitterCards = emitters.length
             ? `<div class="fleet-syslog-emitters">${emitters
                 .map((em, idx) => {
                     const ipDisp = em.noTransportIp
-                        ? '<span class="help-text">— (örnekte transport IP yok)</span>'
+                        ? '<span class="lp-help-muted">— (örnekte transport IP yok)</span>'
                         : `<code>${escapeHtml(String(em.ip || ''))}</code>`;
                     const badge = `<span class="fleet-syslog-role-badge ${fleetSyslogRoleBadgeClass(em.role)}">${escapeHtml(String(em.title || ''))}</span>`;
                     const trustBadge = em.trusted
@@ -3529,9 +3887,9 @@ async function loadFleetSyslogSummary() {
                     </div>
                 </div>
                 <div class="fleet-syslog-sources-wrap">
-                    <p class="help-text" style="margin:0 0 0.35rem 0;font-size:0.78rem;">Servis satırına tıklayın: yalnızca o <code>source</code> için örnek loglar.</p>
+                    <p class="lp-hint-row" style="margin:0 0 0.35rem 0;font-size:0.78rem;">${lpHintMarkupTrusted('Servis satırına tıklayın: yalnızca o <code>source</code> için örnek loglar.')}</p>
                     <div class="fleet-hosts-table-wrap">
-                        <table class="fleet-data-table"><thead><tr><th>Source / servis</th><th class="fleet-num">Örnek içinde</th></tr></thead><tbody>${srcRows || '<tr><td colspan="2" class="help-text">—</td></tr>'}</tbody></table>
+                        <table class="fleet-data-table"><thead><tr><th>Source / servis</th><th class="fleet-num">Örnek içinde</th></tr></thead><tbody>${srcRows || '<tr><td colspan="2" class="lp-help-muted">—</td></tr>'}</tbody></table>
                     </div>
                 </div>
             </article>`;
@@ -3562,14 +3920,14 @@ async function loadFleetSyslogSummary() {
 
         const flatBlock =
             rows.length > 0
-                ? `<details class="help-text" style="margin-top:0.65rem;font-size:0.82rem;max-width:52rem;">
+                ? `<details style="margin-top:0.65rem;font-size:0.82rem;max-width:52rem;color:var(--text-muted);">
             <summary style="cursor:pointer;font-weight:600;">Tüm servisler (düz liste, mühendislik)</summary>
             <div class="fleet-hosts-table-wrap" style="margin-top:0.35rem;"><table class="fleet-data-table"><thead><tr><th>Source / servis adı</th><th class="fleet-num">Örnek içinde</th></tr></thead><tbody>${lis}</tbody></table></div>
             </details>`
                 : '';
 
-        el.innerHTML = `<p class="help-text" style="margin-bottom:0.2rem;">${meta}</p>
-            <p class="help-text" style="margin-bottom:0.45rem;">${policyMeta}</p>
+        el.innerHTML = `<p class="lp-help-muted" style="margin-bottom:0.2rem;">${meta}</p>
+            <p class="lp-help-muted" style="margin-bottom:0.45rem;">${policyMeta}</p>
             ${emitterCards}
             ${ipBlock}
             ${flatBlock}
@@ -3578,7 +3936,7 @@ async function loadFleetSyslogSummary() {
         ensureFleetSyslogSourcesDelegation();
         renderSyslogIngestGuardStatus();
     } catch (e) {
-        el.innerHTML = `<p class="help-text">Hata: ${escapeHtml(e.message || String(e))}</p>`;
+        el.innerHTML = `<p class="lp-help-muted">Hata: ${escapeHtml(e.message || String(e))}</p>`;
         renderSyslogIngestGuardStatus();
     }
 }
@@ -4629,7 +4987,7 @@ function renderSettingsPostCheck() {
         summaryEl.textContent = 'Henüz çalıştırılmadı.';
         badgeEl.className = 'status-badge status-unknown';
         badgeEl.textContent = 'Bekleniyor';
-        listEl.innerHTML = '<li>Health, ingest ve query smoke kontrolleri burada gösterilir.</li>';
+        listEl.innerHTML = '<li>Özet aşağıda listelenir.</li>';
         return;
     }
 
@@ -5223,9 +5581,9 @@ function renderServicesStorageSharedSummary() {
         const pct = fs.totalBytes > 0 ? Math.round((100 * fs.usedBytes) / fs.totalBytes) : 0;
         const mp = escapeHtml(fs.mountPoint || '—');
         const dev = escapeHtml(fs.device || '—');
-        return `${dev} <span class="help-text">@ ${mp}</span> — ${formatStorageBytes(fs.totalBytes)} toplam, boş ${formatStorageBytes(fs.availBytes)}, ~%${pct} dolu <span class="help-text">(tüm FS)</span>`;
+        return `${dev} <span class="lp-help-muted">@ ${mp}</span> — ${formatStorageBytes(fs.totalBytes)} toplam, boş ${formatStorageBytes(fs.availBytes)}, ~%${pct} dolu <span class="lp-help-muted">(tüm FS)</span>`;
     });
-    el.innerHTML = `<div style="line-height:1.5;font-size:0.88rem;"><strong>Paylaşılan bölümler</strong> <span class="help-text">(her aygıt bir kez; servisler ortak havuz kullanır)</span>:<br>${lines.join('<br>')}</div>`;
+    el.innerHTML = `<div style="line-height:1.5;font-size:0.88rem;"><strong>Paylaşılan bölümler</strong> <span class="lp-help-muted">(her aygıt bir kez; servisler ortak havuz kullanır)</span>:<br>${lines.join('<br>')}</div>`;
 }
 
 async function loadServiceStorage() {
@@ -5565,7 +5923,7 @@ function updateServicesTable() {
         const interfaceLinks = getServiceInterfaceLinks(name, info);
         const displayLabel = info.displayName || info.composeService || name;
         const serviceNameCell = displayLabel !== name
-            ? `<strong>${escapeHtml(displayLabel)}</strong><div class="help-text" style="font-size:0.78rem;">Docker adı: <code>${escapeHtml(name)}</code></div>`
+            ? `<strong>${escapeHtml(displayLabel)}</strong><div class="lp-help-muted" style="font-size:0.78rem;">Docker adı: <code>${escapeHtml(name)}</code></div>`
             : `<strong>${escapeHtml(name)}</strong>`;
 
         const actionButtons = [
@@ -5588,7 +5946,7 @@ function updateServicesTable() {
         if (bindPaths.length === 0 && diskBytes === null) {
             diskInner = '—';
         } else if (bindPaths.length === 0) {
-            diskInner = '<span class="help-text">Bind yok</span>';
+            diskInner = '<span class="lp-help-muted">Bind yok</span>';
         } else if (diskBytes !== null) {
             diskInner = formatStorageBytes(diskBytes);
         }
@@ -6472,6 +6830,12 @@ function renderGuidedSettings(settings) {
         const items = grouped[group];
         const groupKey = settingGroupKey(group);
         const isCollapsed = collapsedSettingsGroups.has(groupKey);
+        const signingInfo = group === '5651 Uyum'
+            ? `<div class="onboarding-callout lp-5651-settings-info" style="margin:0 0 0.75rem;">
+                <strong>İmzalama:</strong> OpenSSL geliştirme/zincir testi içindir. TÜBİTAK KamuSM üretim TSA’dır; önce Zamane test kullanıcısı (bilgi@kamusm.gov.tr) ile doğrulayın — test damgası hukuki delil değildir.
+                TÜBİTAK seçince TSA URL ve isteğe bağlı müşteri bilgilerini girin. Ayrıntı: repo <code>docs/TUBITAK_ZAMAN_DAMDASI_TR.md</code>
+               </div>`
+            : '';
         const cards = items.map((s, idx) => {
         const inputId = `setting-${group.replace(/\s+/g, '-').toLowerCase()}-${idx}`;
         const saveBtnId = `${inputId}-save`;
@@ -6495,7 +6859,6 @@ function renderGuidedSettings(settings) {
                         </select>
                         <input id="${inputId}-archive-target" class="input-search" type="text" value="${parsedArchive.target || ''}" placeholder="${localSelected ? 'local hedefi otomatik: ARCHIVE_DATA_ROOT' : (parsedArchive.kind === 'sftp' ? 'server/path' : 'bucket veya path')}" oninput="onArchiveDestinationPartChange('${inputId}', '${errorId}', '${saveBtnId}')" spellcheck="false" ${localSelected ? 'disabled' : ''} ${canEditSettings ? '' : 'disabled'}>
                     </div>
-                    <div class="archive-control-hint">Örnekler: <strong>local</strong>, <strong>minio:logs-backup</strong>, <strong>s3:bucket/path</strong>, <strong>sftp:server/path</strong></div>
                     <input id="${inputId}" type="hidden" value="${currentValue || 'local'}" data-setting-input="1" data-setting-key="${s.key}" data-error-id="${errorId}" data-save-id="${saveBtnId}">
                 </div>
             `;
@@ -6513,24 +6876,31 @@ function renderGuidedSettings(settings) {
         const affected = (s.affectedServices || []).join(', ');
         const restartText = s.restartRequired ? 'Evet' : 'Hayır';
 
+        const hintParts = [s.description || '', guide.hint || ''].filter(Boolean);
+        if (s.key === 'ARCHIVE_DESTINATION') {
+            hintParts.push('Örnekler: local, minio:logs-backup, s3:bucket/path, sftp:server/path');
+        }
+        const hintHtml = lpHintMarkupFromParts(hintParts);
+
         return `
             <div class="card setting-card">
-                <div class="card-header">
-                    <h4>${s.label}</h4>
+                <div class="card-header setting-card-header-row">
+                    <div class="setting-card-title-row">
+                        <h4>${s.label}</h4>
+                        ${hintHtml}
+                    </div>
                     <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
                         <span class="badge badge-warning">${s.requiredRole || 'viewer'}</span>
                         <span class="badge ${riskClass}">risk: ${s.riskLevel || 'medium'}</span>
                     </div>
                 </div>
                 <div class="card-body">
-                    <p class="help-text">${s.description}</p>
-                    ${s.deprecatedCoercion ? `<p class="help-text" style="border-left:3px solid var(--color-warning);padding-left:0.5rem;margin-top:0.5rem;">${String(s.deprecatedCoercion).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>` : ''}
+                    ${s.deprecatedCoercion ? `<p class="setting-deprecation-note">${String(s.deprecatedCoercion).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>` : ''}
                     <div class="setting-meta-grid">
                         <div class="setting-meta-item"><span>Alan</span><strong>${s.key}</strong></div>
                         <div class="setting-meta-item"><span>Restart</span><strong>${restartText}</strong></div>
                         <div class="setting-meta-item setting-meta-item-full"><span>Etkilenen Servisler</span><strong>${affected || '-'}</strong></div>
                     </div>
-                    ${guide.hint ? `<div class="setting-input-hint"><i class="fas fa-lightbulb"></i> ${guide.hint}</div>` : ''}
                     ${inputMarkup}
                     <div id="${errorId}" class="setting-input-error" style="display:none;"></div>
                     <div style="display:flex; justify-content:flex-end; margin-top:0.75rem;">
@@ -6558,6 +6928,7 @@ function renderGuidedSettings(settings) {
                     <span class="badge badge-info">${items.length} ayar</span>
                 </div>
                 <div class="settings-grid grouped-settings-grid" style="display:${isCollapsed ? 'none' : 'grid'};">
+                    ${signingInfo}
                     ${cards}
                 </div>
             </section>
@@ -6817,7 +7188,7 @@ async function loadAuditEvents() {
             if (item.action === 'agent.windows_uninstall' && det) {
                 const h = escapeHtml(det.hostname || '');
                 const inv = det.inventoryUpdated ? 'envanter güncellendi' : 'envanter eşleşmesi yok';
-                extra = `<div class="help-text" style="font-size:0.82rem; margin-top:0.25rem;">Host: <strong>${h}</strong> • ${escapeHtml(inv)}${det.reason ? ` • ${escapeHtml(det.reason)}` : ''}</div>`;
+                extra = `<div class="lp-help-muted" style="font-size:0.82rem; margin-top:0.25rem;">Host: <strong>${h}</strong> • ${escapeHtml(inv)}${det.reason ? ` • ${escapeHtml(det.reason)}` : ''}</div>`;
             }
             return `
             <div class="timeline-item">
@@ -6951,7 +7322,7 @@ async function loadArchiveRetention() {
         const applyRow = hasAtLeastRole('admin')
             ? `<div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
                 <button type="button" class="btn btn-sm btn-warning" id="opensearch-apply-ism-btn"><i class="fas fa-database"></i> OpenSearch ISM + şablonu uygula</button>
-                <span id="opensearch-ism-apply-result" class="help-text"></span>
+                <span id="opensearch-ism-apply-result" class="lp-help-muted"></span>
                </div>`
             : '';
 
