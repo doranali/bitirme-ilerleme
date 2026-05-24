@@ -28,7 +28,7 @@
 | 5     | 05.05 - 11.05.2026 | OpenSearch indeks/arama tarafı; Grafana veri kaynağı, SOC/operasyon panelleri; alarm ve webhook hattı                          | %74                    | ✅ Tamamlandı |
 | 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ✅ Tamamlandı |
 | 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ✅ Tamamlandı |
-| 8     | 26.05 - 01.06.2026 | Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri                            | %91                    | ⬜ Başlamadı  |
+| 8     | 26.05 - 01.06.2026 | Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri                            | %91                    | ✅ Tamamlandı |
 | 9     | 02.06 - 08.06.2026 | Bitirme raporu taslağı; eksik modüllerin tamamlanması; kenar durum ve regresyon kontrolleri                                    | %96                    | ⬜ Başlamadı  |
 | 10    | 09.06 - 15.06.2026 | Bitirme raporu kesinleştirme ve sunum; son hata düzeltmeleri; teslim paketi ve sürüm/etiket notu                               | %100                   | ⬜ Başlamadı  |
 
@@ -40,6 +40,30 @@
 ## Haftalık İlerleme Kayıtları
 
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
+
+---
+
+### Hafta 8 *(Tarih: 26.05.2026 - 01.06.2026)*
+
+**Plandaki hedef:**
+
+- Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri
+
+**Bu hafta yaptıklarım:**
+
+- TLS ve sertifika tarafında OpenSearch/Graylog bağlantılarında kullanılan sertifika üretimi, SAN tanımı ve truststore davranışını gözden geçirdim.
+- Üretim benzeri kurulumda geliştirme/test kalıntısı kalmaması için parity doğrulama adımlarını netleştirdim.
+- Repo ile test ortamı arasındaki senkron akışını `rsync-test`, `sync-to-test` ve uzak sağlık kontrolü adımlarıyla dokümante ettim.
+- Kurulum sonrası temel sağlık kontrollerini `prod-sanity-check`, `validate-prod-parity` ve uçtan uca platform testiyle ilişkilendirdim.
+- Log akışı, Graylog API, panel sağlık ucu, Grafana sağlık ucu ve 5651 imzalama zincirini aynı doğrulama kapsamında topladım.
+
+**Plana göre durumum:**
+
+- Hafta 8 hedefleri planlanan kapsamda tamamlandı; güvenlik, parity, senkron ve entegrasyon doğrulama başlıkları teslim edilebilir dokümantasyonla desteklendi.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- Sertifika dosyalarının yanlışlıkla dizin olarak oluşması, truststore zinciri ve test ortamı izinleri gibi kurulum kaynaklı hatalar için ayrı sorun giderme notları oluşturuldu.
 
 ---
 
