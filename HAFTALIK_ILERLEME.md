@@ -29,7 +29,7 @@
 | 6     | 12.05 - 18.05.2026 | 5651 hattı: değiştirilemez ham arşiv, imzalama süreci ve ilgili otomasyonların gözden geçirilmesi/iyileştirilmesi              | %80                    | ✅ Tamamlandı |
 | 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ✅ Tamamlandı |
 | 8     | 26.05 - 01.06.2026 | Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri                            | %91                    | ✅ Tamamlandı |
-| 9     | 02.06 - 08.06.2026 | Bitirme raporu taslağı; eksik modüllerin tamamlanması; kenar durum ve regresyon kontrolleri                                    | %96                    | ⬜ Başlamadı  |
+| 9     | 02.06 - 08.06.2026 | Bitirme raporu taslağı; eksik modüllerin tamamlanması; kenar durum ve regresyon kontrolleri                                    | %96                    | ✅ Tamamlandı |
 | 10    | 09.06 - 15.06.2026 | Bitirme raporu kesinleştirme ve sunum; son hata düzeltmeleri; teslim paketi ve sürüm/etiket notu                               | %100                   | ⬜ Başlamadı  |
 
 
@@ -40,6 +40,30 @@
 ## Haftalık İlerleme Kayıtları
 
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
+
+---
+
+### Hafta 9 *(Tarih: 02.06.2026 - 08.06.2026)*
+
+**Plandaki hedef:**
+
+- Bitirme raporu taslağı; eksik modüllerin tamamlanması; kenar durum ve regresyon kontrolleri
+
+**Bu hafta yaptıklarım:**
+
+- Bitirme raporunun bölüm taslaklarını (giriş, mimari, log akışı, 5651 hattı, panel ve doğrulama) toparlamaya başladım; haftalık ilerleme kayıtlarını rapor metnine kaynak olarak hizaladım.
+- Setup gate (K1/K2) tarafında `SIGNER_TYPE` boş ve geçersiz değer kenar durumları için ek birim testleri ekledim (`tests/test_setup_gate_unit.py`); böylece 5651 imzalama motoru seçimi sessiz varsayılana düşmüyor.
+- Graylog `create-ecs-pipeline.sh` üzerinde Stage0/Stage6 alias kuralları, Stage5 sanitize/normalize regex davranışı ve severity-split mantığı için statik regresyon testlerini (`test_pipeline_aliases.py`, `test_pipeline_regex_match.py`, `test_pipeline_severity_split.py`) yazılı doğrulama olarak kayda aldım.
+- Grafana SOC dashboard JSON dosyalarının sorgu yapısının bozulmadığını koruyan temel regresyon testini (`test_existing_dashboards_intact.py`) ekledim.
+- Eksik kalan modül uçlarını (setup gate K2 zorunlulukları, pipeline alias çakışmaları) bu testlerle kapanışa hazır hale getirdim.
+
+**Plana göre durumum:**
+
+- Hafta 9 hedefleri planla uyumlu şekilde ilerletildi; rapor taslağı çalışması başlatıldı ve regresyon test kapsaması teslime hazır biçimde dokümante edildi.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- 5651 imzalama motoru seçiminde önceki sürümlerde boş `SIGNER_TYPE` durumunda sessiz `OPEN_SOURCE` varsayılması, denetim açısından zayıf bir noktaydı; setup gate'i hard-block davranışına çevirip yeni birim testleriyle bu davranışı kalıcı olarak kilitledim.
 
 ---
 

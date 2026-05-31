@@ -106,6 +106,70 @@ class TestSetupGate(unittest.TestCase):
         )
         self.assertFalse(any(m.get("id") == "TUBITAK_TSA_URL" for m in st2["k2Missing"]))
 
+    def test_signer_type_required(self):
+        """SIGNER_TYPE boş bırakıldığında K2 hard-block; soft-default kaldırıldı."""
+        env = {
+            "LOG_SYSTEM_ENV": "prod",
+            "LOG_SYSTEM_COMPANY_ID": "acme",
+            "LOG_PLATFORM_PUBLIC_BASE_URL": "https://logs.acme.test",
+            "DEV_DEFAULT_CREDENTIALS": "false",
+            "ARCHIVE_DESTINATION": "local",
+        }
+        st = evaluate_setup_gate(
+            env,
+            {"acks": {"syslog_empty_ok": True}},
+            panel_admin_password_is_default=False,
+            trusted_syslog_lines=0,
+            ingest_overall="ok",
+            storage_same_as_root=False,
+            storage_phase="bound",
+        )
+        self.assertFalse(st["k2Complete"])
+        self.assertTrue(
+            any(m.get("id") == "SIGNER_TYPE" for m in st["k2Missing"]),
+            f"SIGNER_TYPE eksik kartı bekleniyor; k2Missing={st['k2Missing']}",
+        )
+
+    def test_signer_type_open_source_completes_k2(self):
+        env = {
+            "LOG_SYSTEM_ENV": "prod",
+            "LOG_SYSTEM_COMPANY_ID": "acme",
+            "LOG_PLATFORM_PUBLIC_BASE_URL": "https://logs.acme.test",
+            "DEV_DEFAULT_CREDENTIALS": "false",
+            "SIGNER_TYPE": "OPEN_SOURCE",
+            "ARCHIVE_DESTINATION": "local",
+        }
+        st = evaluate_setup_gate(
+            env,
+            {"acks": {"syslog_empty_ok": True}},
+            panel_admin_password_is_default=False,
+            trusted_syslog_lines=0,
+            ingest_overall="ok",
+            storage_same_as_root=False,
+            storage_phase="bound",
+        )
+        self.assertTrue(st["k2Complete"], f"OPEN_SOURCE seçilince K2 tamam olmalı; k2Missing={st['k2Missing']}")
+
+    def test_signer_type_invalid_value(self):
+        env = {
+            "LOG_SYSTEM_ENV": "prod",
+            "LOG_SYSTEM_COMPANY_ID": "acme",
+            "LOG_PLATFORM_PUBLIC_BASE_URL": "https://logs.acme.test",
+            "DEV_DEFAULT_CREDENTIALS": "false",
+            "SIGNER_TYPE": "FOOBAR",
+            "ARCHIVE_DESTINATION": "local",
+        }
+        st = evaluate_setup_gate(
+            env,
+            {"acks": {"syslog_empty_ok": True}},
+            panel_admin_password_is_default=False,
+            trusted_syslog_lines=0,
+            ingest_overall="ok",
+            storage_same_as_root=False,
+            storage_phase="bound",
+        )
+        self.assertTrue(any(m.get("id") == "SIGNER_TYPE" for m in st["k2Missing"]))
+
     def test_validate_company(self):
         self.assertIsNotNone(validate_company_id("default"))
         self.assertIsNone(validate_company_id("ab"))
