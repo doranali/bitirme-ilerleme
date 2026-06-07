@@ -130,13 +130,23 @@ def evaluate_setup_gate(
 ) -> dict[str, Any]:
     """
     Dönüş: k1Complete, k2Complete, k1Missing, k2Missing (id+message), optionalHints.
+
+    Mimariye göre kategoriler:
+    - Hard block (gate satisfied=false): LOG_PLATFORM_PUBLIC, DEV_DEFAULT_CREDENTIALS (prod),
+      PANEL_ADMIN_PASSWORD, PIPELINE_HEALTH, ARCHIVE_DESTINATION.
+    - Soft warning (gate satisfied=true, optionalHints listesinde): COMPANY_ID, SIGNER_TYPE
+      boş bırakıldığında uyarı; SIGNER_TYPE için OPEN_SOURCE varsayılır.
     """
     k1_missing: list[dict[str, str]] = []
     k2_missing: list[dict[str, str]] = []
     hints: list[str] = []
 
+    # COMPANY_ID: zorunlu değil, ancak ayarlanması önerilir; "default" da soft warning
     if not _company_ok(env_map):
-        k1_missing.append({"id": "LOG_SYSTEM_COMPANY_ID", "message": "LOG_SYSTEM_COMPANY_ID zorunlu ve 'default' olamaz."})
+        hints.append(
+            "Kurum kodu (LOG_SYSTEM_COMPANY_ID) ayarlanmamış veya 'default'; raporlama ve agent profil "
+            "adlandırması için Ayarlar → Kurulum bölümünden kurum kodunu güncellemenizi öneririz."
+        )
 
     ok_pub, pub_err = _public_endpoint_ok(env_map)
     if not ok_pub:
@@ -190,8 +200,15 @@ def evaluate_setup_gate(
             )
 
     st = str(env_map.get("SIGNER_TYPE", "")).strip().upper()
-    if st not in ("TUBITAK", "OPEN_SOURCE"):
-        k2_missing.append({"id": "SIGNER_TYPE", "message": "SIGNER_TYPE OPEN_SOURCE veya TUBITAK olarak seçilmelidir."})
+    if st == "":
+        # 5651 kapsamında imzalama motoru kullanıcı tarafından bilinçli seçilmelidir.
+        # Boş varsayılan kabul etmiyoruz; wizard kullanıcıyı seçim yapmaya zorlar.
+        k2_missing.append(
+            {
+                "id": "SIGNER_TYPE",
+                "message": "5651 imzalama motoru henüz seçilmedi. TÜBİTAK Kamu SM veya OpenSSL (açık kaynak) arasından bir seçim yapın.",
+            }
+        )
     elif st == "TUBITAK":
         tsa_url = str(env_map.get("TUBITAK_TSA_URL", "")).strip()
         if not tsa_url:
@@ -201,6 +218,17 @@ def evaluate_setup_gate(
                     "message": "TÜBİTAK seçildi; Kamu SM TSA tam URL adresi (.env TUBITAK_TSA_URL) gerekli.",
                 }
             )
+    elif st == "TUBITAK_TEST":
+        pass  # KamuSM Test Suit — kimlik bilgisi otomatik (zdsA1.test3.kamusm.gov.tr)
+    elif st == "PUBLIC_TSA_TEST":
+        pass  # AATL public TSA — TUBITAK ile aynı form; kimlik opsiyonel
+    elif st != "OPEN_SOURCE":
+        k2_missing.append(
+            {
+                "id": "SIGNER_TYPE",
+                "message": "SIGNER_TYPE geçersiz; TUBITAK, TUBITAK_TEST, PUBLIC_TSA_TEST veya OPEN_SOURCE olmalı.",
+            }
+        )
 
     ad = str(env_map.get("ARCHIVE_DESTINATION", "local")).strip().lower()
     if not ad.startswith(("local", "minio:", "s3:", "sftp:")):
@@ -211,9 +239,9 @@ def evaluate_setup_gate(
     if k1_complete and not k2_complete:
         hints.append("K1 tamam; K2 için sağlık, depolama/syslog onayı ve imzalama hedefi gerekir.")
     elif not k1_complete:
-        hints.append("Önce K1 (kimlik, dış adres, güvenlik) tamamlanmalıdır.")
+        hints.append("Önce K1 (dış adres, güvenlik, yönetici parolası) tamamlanmalıdır.")
 
-    return {
+    result = {
         "k1Complete": k1_complete,
         "k2Complete": k2_complete,
         "gateSatisfied": k1_complete and k2_complete,
@@ -221,3 +249,4 @@ def evaluate_setup_gate(
         "k2Missing": k2_missing,
         "optionalHints": hints,
     }
+    return result

@@ -30,7 +30,7 @@
 | 7     | 19.05 - 25.05.2026 | Log Management UI: izleme, konfigürasyon ve operasyonel ekranlarda iyileştirme ve stabilizasyon                                | %86                    | ✅ Tamamlandı |
 | 8     | 26.05 - 01.06.2026 | Güvenlik (TLS/sertifika), üretim parity, senkron/test scriptleri; entegrasyon ve sağlık kontrolleri                            | %91                    | ✅ Tamamlandı |
 | 9     | 02.06 - 08.06.2026 | Bitirme raporu taslağı; eksik modüllerin tamamlanması; kenar durum ve regresyon kontrolleri                                    | %96                    | ✅ Tamamlandı |
-| 10    | 09.06 - 15.06.2026 | Bitirme raporu kesinleştirme ve sunum; son hata düzeltmeleri; teslim paketi ve sürüm/etiket notu                               | %100                   | ⬜ Başlamadı  |
+| 10    | 09.06 - 15.06.2026 | Bitirme raporu kesinleştirme ve sunum; son hata düzeltmeleri; teslim paketi ve sürüm/etiket notu                               | %100                   | ✅ Tamamlandı |
 
 
 **Durum simgeleri:** ⬜ Başlamadı | 🔄 Devam Ediyor | ✅ Tamamlandı | ⚠️ Gecikti
@@ -40,6 +40,34 @@
 ## Haftalık İlerleme Kayıtları
 
 > **Kullanım:** Her hafta şablonu kopyalayın; **en güncel hafta en üstte** olacak şekilde ekleyin. Kayıt, ilgili haftanın iş planı maddeleriyle uyumlu özet içermelidir.
+
+---
+
+### Hafta 10 *(Tarih: 09.06.2026 - 15.06.2026)*
+
+**Plandaki hedef:**
+
+- Bitirme raporu kesinleştirme ve sunum; son hata düzeltmeleri; teslim paketi ve sürüm/etiket notu
+
+**Bu hafta yaptıklarım:**
+
+- Bitirme raporunu kesinleştirip sunum için son haline getirdim; haftalık ilerleme kayıtlarını rapor bölümleriyle bütünleştirdim.
+- Teslim öncesi son hata düzeltmelerini servis bazında toparladım: Graylog pipeline (`create-ecs-pipeline.sh`, `post-init.sh`) ve normalizasyon lookup tabloları, Fluent Bit yapılandırması (`fluent-bit.conf`, `parsers.conf`, syslog kaynak politikası), OpenSearch indeks şablonu ve ISM uygulaması.
+- 5651 imzalama hattında `signing-engine` ve `sign_logs.sh` tarafındaki düzeltmeleri, izleme bileşenlerini (`alert_webhook_server.py`, `telegram_watchdog.sh`) ve setup gate doğrulamasını (`setup_gate.py`) son haline çektim.
+- Kurulum ve operasyon dokümanlarını (`DEV_TEST_WORKFLOW.md`, `AGENT_FLEET_ONBOARDING_TR.md`) ve `.env.example` şablonunu teslim paketine uygun şekilde güncelledim.
+- Servis imajları (`log-management-ui`, `signing-engine`, `alert-webhook` Dockerfile) ve bağımlılık tanımlarını (`requirements.txt`) sürüm tutarlılığı için gözden geçirdim.
+
+**Plana göre durumum:**
+
+- Hafta 10 hedefleri tamamlandı; proje %100 tamamlanma ile teslim ve sunuma hazır hale getirildi.
+
+**Karşılaştığım sorunlar / zorluklar:**
+
+- Teslim paketinin temiz kalması için servis yapılandırmaları ile dokümanların birbiriyle tutarlı olması gerekti; kurulum akışı ve doğrulama adımlarını dokümanlarla hizalayarak giderildi.
+
+**Proje teslimi:**
+
+- Bu hafta dönemin son haftasıdır; bitirme raporu, çalışan platform ve dokümantasyon teslim edilmiştir.
 
 ---
 

@@ -49,6 +49,7 @@ Bu doküman, **panel üzerinden** enrollment token üretip Fluent Bit agent/rela
 - [Fluent Bit Windows paketi](https://docs.fluentbit.io/manual/installation/windows) indirilir; `winlog` ile Application / System / Security kanalları toplanır
 - Merkeze JSON/UDP (`ingestHost:ingestPort`) gönderilir; Windows hizmeti olarak kaydedilir
 - Zip sürümü: `.env` içinde `FLUENT_BIT_WINDOWS_VERSION` veya tam URL `FLUENT_BIT_WINDOWS_ZIP_URL` (panel `log-management-ui` ortamında)
+- Dış ağdan zip indirilemiyorsa (Windows `Invoke-WebRequest` TLS hatası): test sunucusunda `scripts/ops/prefetch-fluent-bit-windows-zip.sh` çalıştırın; panel `data/agent-assets/` içindeki dosyayı `GET /api/agent/assets/fluent-bit-win64.zip` ile sunar
 
 ## 4) Kullanım Akışı
 

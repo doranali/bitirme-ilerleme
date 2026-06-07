@@ -1,7 +1,7 @@
 FROM python:3.12-alpine
 
 # apk add retry: Alpine DNS/systemd-resolved sorunlarında build takılmasını önler (Bölüm 8)
-RUN ok=0; for i in 1 2 3; do apk add --no-cache bash openssl rclone mongodb-tools curl && ok=1 && break; sleep 5; done; [ "$ok" = "1" ] || exit 1
+RUN ok=0; for i in 1 2 3; do apk add --no-cache bash openssl rclone mongodb-tools curl e2fsprogs && ok=1 && break; sleep 5; done; [ "$ok" = "1" ] || exit 1
 
 WORKDIR /app
 

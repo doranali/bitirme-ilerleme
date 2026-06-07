@@ -41,9 +41,25 @@ def main() -> int:
     user = (os.environ.get("OPENSEARCH_USER") or "admin").strip()
     tls_skip = _truthy("OPENSEARCH_TLS_SKIP_VERIFY", "true")
     flavor_version = (os.environ.get("GRAFANA_OPENSEARCH_VERSION") or "2.18.0").strip()
-    # Graylog OpenSearch: olay zamanı alanı genelde `timestamp` (@timestamp yok)
-    time_field = (os.environ.get("GRAFANA_OPENSEARCH_TIME_FIELD") or "timestamp").strip()
-    index_pattern = (os.environ.get("GRAFANA_OPENSEARCH_INDEX") or "graylog_*").strip()
+    # Olay zamanı alanı: ECS standardı `@timestamp` (ISO8601 UTC, sonu `Z`). Belgelerde
+    # ayrıca TZ'siz özel formatlı `timestamp` ve yerel ofsetli `event_created` bulunur;
+    # `@timestamp` belirsizlik/timezone kayması yaşatmadan UTC instant'ı taşır. Alert
+    # rules.yaml de `@timestamp` kullanır — datasource ile birebir tutarlılık şart.
+    time_field = (os.environ.get("GRAFANA_OPENSEARCH_TIME_FIELD") or "@timestamp").strip()
+    # SADECE normalize edilmiş indeks: cleanlog_*. rawlog_* (ham) ve cleanlog_* AYNI logun
+    # iki kopyasıdır; ikisini birden sorgulamak tüm count'ları ~2 katına çıkarır (panelin
+    # cleanlog_* tabanlı gerçek değerleriyle çelişir). rawlog_* ayrıca ECS/normalize
+    # alanlarını (vendor, normalization_status, event.* ...) içermez. Panel da
+    # `cleanlog_*` kaynağını kullandığından Grafana ile birebir uyum için cleanlog_*.
+    index_pattern = (
+        os.environ.get("GRAFANA_OPENSEARCH_INDEX") or "cleanlog_*"
+    ).strip()
+    # İndeks zaman deseni (Pattern): boş = "No pattern". İndeksler tarih ekli DEĞİL
+    # (cleanlog_0/rawlog_0/graylog_0), bu yüzden "Daily" gibi bir desen OpenSearch
+    # eklentisinin indeks adına tarih-matematiği ekleyip var olmayan indeks aramasına
+    # ("Index not found") ve tüm panel/değişken sorgularının boş dönmesine yol açar.
+    # Wildcard/virgüllü çok-indeks deseni desen GEREKTİRMEZ; varsayılan boş bırakılır.
+    interval = (os.environ.get("GRAFANA_OPENSEARCH_INTERVAL") or "").strip()
     out_path = Path(
         os.environ.get("GRAFANA_DATASOURCES_OUT")
         or "/etc/grafana/provisioning/datasources/datasources.yaml"
@@ -58,6 +74,15 @@ def main() -> int:
 
     doc = {
         "apiVersion": 1,
+        # Grafana DB'de daha önce timestamp/boş indeks ile kalmış datasource varsa
+        # provisioning aynı uid/name'i temizleyip güncel @timestamp konfigürasyonuyla
+        # yeniden oluşturur. Dashboards aynı uid'ye bağlanmaya devam eder.
+        "deleteDatasources": [
+            {
+                "name": "OpenSearch-DS",
+                "orgId": 1,
+            }
+        ],
         "datasources": [
             {
                 "uid": "opensearch-main",
@@ -73,7 +98,9 @@ def main() -> int:
                     "version": flavor_version,
                     "flavor": "opensearch",
                     "tlsSkipVerify": tls_skip,
-                    "interval": "Daily",
+                    # interval boşsa "No pattern" — anahtar tamamen atlanır (eklenti
+                    # boş string'i de desen sayabildiğinden, yokluk en güvenlisi).
+                    **({"interval": interval} if interval else {}),
                     "timeField": time_field,
                     "database": index_pattern,
                     "logMessageField": "message",
@@ -83,7 +110,7 @@ def main() -> int:
                 "secureJsonData": {"basicAuthPassword": password},
                 "editable": True,
                 "isDefault": True,
-                "version": 2,
+                "version": 12,
             }
         ],
     }

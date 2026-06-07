@@ -1,2 +1,37 @@
 .DS_Store
 Thumbs.db
+.env
+envs/*.env
+!envs/*.env.example
+envs/test-sync.env
+
+# Runtime / instance state (never commit)
+/panel-setup-state.json
+/users.yaml
+/state/*.json
+/state/.graylog-post-init.done
+/state/audit/
+/state/qa-evidence-*.json
+/config/agent-fleet/*.json
+!/config/agent-fleet/.gitkeep
+/config/audit/
+/data/tenants.json
+/data/mongodb_data/
+/data/opensearch_data*/
+/data/minio_data/
+/data/kafka_data*/
+/data/grafana_data/
+/graylog_journal/
+/logs/
+/qa-*.json
+/qa-run-*.md
+/config/certs/
+
+# Panel image/runtime leaks (bind-mount overrides in compose; keep out of git)
+/src/services/log-management-ui/config/users.yaml
+/src/services/log-management-ui/config/audit/events.jsonl
+/src/services/log-management-ui/config/data/tenants.json
+
+# Live syslog trust lists (panel-managed)
+/src/services/fluent-bit/syslog-trusted-sources.txt
+/src/services/fluent-bit/agent-trusted-sources.txt

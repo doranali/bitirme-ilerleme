@@ -36,6 +36,7 @@ Test sunucusunu sık sıfırdan kurduğunuzda aynı davranışı almak için tek
 
 ### Hata düzeltmesi sonrası teste yansıtma (her zaman)
 
+Kullanıcı bir hata bildirdiğinde geliştirici repoda düzeltmeyi bitirdikten sonra **test ortamının da aynı düzeltmeyi görmesi** gerekir; böylece kullanıcı test VM’de kontrol edebilir.
 
 | Senaryo | Ne yapın |
 |---------|----------|
@@ -43,7 +44,6 @@ Test sunucusunu sık sıfırdan kurduğunuzda aynı davranışı almak için tek
 | Düzenleme **doğrudan test sunucusundaki** `/opt/log-system` içinde | Rsync gerekmez; değişen servisler için örn. `docker compose build log-management-ui grafana && docker compose up -d log-management-ui grafana`. |
 | Sadece dosya göndermek | **`make rsync-test`** (tercih). Alternatif: `SYNC_REBUILD=0 make sync-to-test`. |
 
-Kalıcı kural: `.cursor/rules/repo-first-test-sync.mdc` (`alwaysApply: true`).
 
 ---
 
@@ -206,12 +206,94 @@ graylog-test ALL=(ALL) NOPASSWD: /usr/bin/mkdir, /usr/bin/chown
 
 1. Test sunucusuna rsync (`data`, `.env`, `config`, sertifikalar hariç).
 2. Uzakta `docker compose up -d --build` ( `SYNC_REBUILD=1` ise).
+3. `TEST_POST_SYNC_WAIT` saniye bekler (varsayılan 45).
 4. Uzakta `docker compose config` ve `scripts/prod-sanity-check.sh`.
 
 Uzaktaki script `envs/test-sync.env` içinde `REMOTE_PROD_SANITY` ile değiştirilebilir.
 
 ---
 
+
+## Panel audit smoke (Faz 1+)
+
+Panel UI değişikliği sonrası yerel/regresyon kontrolü:
+
+```bash
+# log-management-ui konteyneri çalışıyorsa docker exec ile; değilse venv + LOG_SYSTEM_BASE
+make panel-smoke
+make panel-full-smoke   # v3: envanter + geniş smoke + walkthrough harness (state/audit/v3/)
+make panel-baseline   # state/audit/baseline-latest.json
+make panel-diff       # refactor sonrası endpoint farkı
+make panel-audit-warn # orphan modül/endpoint + header uyarıları
+```
+
+CI: `make ci-smoke` artık `panel-smoke` + orphan modül taramasını da çalıştırır.
+
+Ayrıntılı harita: [PANEL_ARCHITECTURE.md](PANEL_ARCHITECTURE.md)
+
+Panel imajı güncelleme (test VM):
+
+```bash
+docker compose build log-management-ui && docker compose up -d log-management-ui
+```
+
+---
+
+## install-prod davranış matrisi (akıllı tek komut)
+
+Reboot sonrası veya sorunlu sistemde **aynı komut**: `make install-prod`. Script ortamı tarar; mevcut kurulum varsa varsayılan **onar ve başlat** (veri silmez), kurulum yoksa **sıfırdan kurar**.
+
+**Tespit sinyalleri** (herhangi biri → mevcut kurulum): `users.yaml`, `config/credentials-initial.txt`, `panel-setup-state.json`, dolu `data/opensearch_data*`, dolu `data/mongodb_data`, çalışan `log-management-ui` / `graylog` konteyneri.
+
+| Mod | Ne yapar | Ne yapmaz |
+|-----|----------|-----------|
+| **repair** (varsayılan, kurulum varsa) | `.env` korunur, secret yenilenmez, `docker compose up -d`, healthcheck | `users.yaml`, panel state, OpenSearch/Mongo/Kafka verisi silinmez |
+| **fresh** (onaylı) | Tam wipe + sıfırdan kurulum | — |
+
+**Seçim:**
+
+- İnteraktif terminal: `(R)` Onar / `(F)` Sıfırdan / `(C)` İptal
+- Non-interaktif: `repair` (güvenli); fresh için `CONFIRM_FRESH_INSTALL=1`
+- Zorla: `INSTALL_MODE=repair make install-prod` veya `make install-prod-repair`
+- Sıfırdan: `make install-prod-fresh` veya `INSTALL_MODE=fresh CONFIRM_FRESH_INSTALL=1 make install-prod`
+
+**Geriye uyumluluk (yalnızca fresh modunda):**
+
+| Bayrak | Anlam |
+|--------|--------|
+| `PRESERVE_APP_DATA=1` | OpenSearch/Mongo/Kafka/Graylog journal silinmez |
+| `WIPE_PANEL_STATE=0` | agent-fleet, audit, syslog-trusted silinmez |
+
+**Doğrulama:** `repair` sonrası `VERIFY_MODE=repair` (servis `/api/health`); `fresh` sonrası `VERIFY_MODE=clean` (boş panel assertleri).
+
+---
+
+## Temiz kurulum garantileri
+
+Yeni bir kurulumda panel **test IP'si, eski uç cihaz kaydı veya önceki OpenSearch log sayaçları** göstermemelidir. Bunun için:
+
+| Dosya / dizin | Tür | Neden repoda izlenmez |
+|---------------|-----|------------------------|
+| `panel-setup-state.json` | Panel kurulum ilerlemesi | Instance state |
+| `users.yaml` | Panel admin listesi | First-run / TOFU ile oluşur |
+| `config/agent-fleet/*.json` | Uç envanteri, token, profil | Operatör verisi |
+| `config/audit/events.jsonl` | Panel denetim günlüğü | Runtime |
+| `src/services/fluent-bit/syslog-trusted-sources.txt` | Syslog güvenilir kaynaklar | Panel API ile yönetilir |
+| `state/*.json`, `state/audit/` | Normalizasyon keşif / QA kanıtı | Test artığı |
+| `data/opensearch_data*`, `data/mongodb_data/` | Büyük veri | Bind-mount |
+
+**Fresh kurulum bayrakları** (yalnızca `INSTALL_MODE=fresh` veya otomatik ilk kurulum): `PRESERVE_APP_DATA`, `WIPE_PANEL_STATE` — bkz. yukarıdaki matris.
+
+**Doğrulama:** `bash scripts/verify-clean-install.sh` — `VERIFY_MODE=clean` (fresh) veya `VERIFY_MODE=repair` (onarim).
+
+**“Test verisi sızdı” kontrol listesi:**
+
+1. `grep -v '^#' src/services/fluent-bit/syslog-trusted-sources.txt` — boş olmalı.
+2. `ls config/agent-fleet/*.json` — olmamalı.
+3. OpenSearch: `curl -fsSk -u admin:… https://127.0.0.1:9200/cleanlog_*/_count` → `"count":0`.
+4. Panel → Akıllı Normalizasyon: vendor sayaçları 0 veya veri yok.
+
+---
 
 ## Sorun giderme
 

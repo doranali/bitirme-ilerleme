@@ -2,7 +2,6 @@
   "index_patterns": [
     "graylog_*",
     "*-graylog-*",
-    "rawlog_*",
     "cleanlog_*",
     "devlog_*",
     "gl-events_*",
@@ -13,11 +12,70 @@
       "index.codec": "best_compression"
     },
     "mappings": {
+      "dynamic_templates": [
+        {
+          "strings_as_keyword": {
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        {
+          "ip_fields": {
+            "match": "*_ip",
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "ip"
+            }
+          }
+        },
+        {
+          "count_fields": {
+            "match": "*_count",
+            "mapping": {
+              "type": "long"
+            }
+          }
+        },
+        {
+          "bytes_fields": {
+            "match": "*_bytes",
+            "mapping": {
+              "type": "long"
+            }
+          }
+        }
+      ],
       "properties": {
         "timestamp": {
           "type": "date",
-          "format": "uuuu-MM-dd HH:mm:ss.SSS"
-        }
+          "format": "uuuu-MM-dd HH:mm:ss.SSS||strict_date_optional_time||epoch_millis"
+        },
+        "source.ip": { "type": "ip" },
+        "destination.ip": { "type": "ip" },
+        "host.name": { "type": "keyword" },
+        "user.name": { "type": "keyword" },
+        "event.category": { "type": "keyword" },
+        "event.outcome": { "type": "keyword" },
+        "event.action": { "type": "keyword" },
+        "event.duration": { "type": "long" },
+        "network.protocol": { "type": "keyword" },
+        "normalization_status": { "type": "keyword" },
+        "normalization_profile": { "type": "keyword" },
+        "normalization_confidence": { "type": "integer" },
+        "normalization_anchor_matches": { "type": "integer" },
+        "normalization_lookup_key": { "type": "keyword" },
+        "normalization_discovery_key": { "type": "keyword" },
+        "vendor": { "type": "keyword" },
+        "product": { "type": "keyword" },
+        "os_major": { "type": "keyword" },
+        "company_id": { "type": "keyword" },
+        "source": { "type": "keyword" },
+        "log_type": { "type": "keyword" },
+        "syslog_sender_ip": { "type": "ip" },
+        "ecs_parse_quality": { "type": "integer" }
       }
     }
   },
